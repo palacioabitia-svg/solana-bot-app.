@@ -42,7 +42,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <div class="card">
 <h2>Reglas del simulador · crecimiento con control de pérdidas</h2>
 <p><b>Objetivo por etapas:</b> $100 → $200 → $400 → $800 MXN. No existe garantía de alcanzar ninguna meta. El patrimonio virtual varía con las posiciones y las comisiones.</p>
-<p><b>Hasta 10 posiciones abiertas</b>, sin obligación de ocuparlas. Reserva virtual <b>$30 MXN</b>, tamaño máximo de posición <b>8.5% del patrimonio</b>, y riesgo objetivo <b>1.5% del patrimonio por entrada</b> suponiendo que se pueda ejecutar un stop; las pérdidas reales pueden superar ese límite.</p>
+<p><b>Hasta 10 posiciones abiertas</b>, sin obligación de ocuparlas. Reserva virtual <b>$30 MXN</b>, posición de hasta <b>8.5% del patrimonio al inicio</b> (el porcentaje disminuye conforme crece el capital, para permitir más posiciones), y riesgo objetivo <b>1.5% del patrimonio por entrada</b> suponiendo que se pueda ejecutar un stop; las pérdidas reales pueden superar ese límite.</p>
 <p><b>Antes de entrar:</b> liquidez suficiente, presión de compras, tendencia moderadamente positiva y dos revisiones consecutivas favorables. Se revisa el mercado aproximadamente cada 15 segundos mientras la página esté visible. No se fuerza una operación.</p>
 <p><b>Salidas hipotéticas:</b> stop por caída del precio del 9%; objetivo de <b>+25% de beneficio neto estimado</b>; seguimiento de ganadoras después de alcanzar +14% neto; y límite de mantenimiento de <b>6 horas</b>. Ya no se venden posiciones automáticamente a los 2 minutos.</p>
 <p><b>Costos estimados:</b> 2.2% del valor más $0.05 MXN por cada compra o venta. No son cotizaciones ejecutables. Con posiciones pequeñas, el punto de equilibrio exige una subida considerable. Las ganancias que queden en la caja virtual se reinvierten automáticamente.</p>
@@ -230,7 +230,8 @@ const usable=data.cash-RESERVE,eq=equity(),slots=Math.max(1,MAX_POSITIONS-data.o
 const remainingRisk=eq*MAX_TOTAL_STOP_RISK-riskExposure();
 const stopFactor=(1-STOP)*(1-ROUND_COST)/(1+ROUND_COST);
 const maxStakeRisk=(remainingRisk-GAS*(1+stopFactor))/(1-stopFactor);
-const stake=Math.min(usable/slots,eq*MAX_STAKE,riskBudget/(STOP+2*ROUND_COST+2*GAS/MIN_STAKE),maxStakeRisk);
+const diversifiedFraction=Math.max(.032,MAX_STAKE-Math.max(0,eq-START)*.00025);
+const stake=Math.min(usable/slots,eq*diversifiedFraction,riskBudget/(STOP+2*ROUND_COST+2*GAS/MIN_STAKE),maxStakeRisk);
 const price=num(p.priceUsd);
 if(!price||!Number.isFinite(stake)||stake<MIN_STAKE||!p.pairAddress||!Number.isFinite(rate)||rate<=0)return false;
 const qty=(stake-GAS)/(price*rate*(1+ROUND_COST));
