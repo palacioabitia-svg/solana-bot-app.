@@ -124,48 +124,65 @@ throw Error('No fue posible consultar USD/MXN: '+errors.join(' | '));
 function pairsFor(token,all){const valid=all.filter(p=>p.chainId==='solana'&&p.baseToken?.address===token&&num(p.priceUsd)>0&&num(p.liquidity?.usd)>0);
 valid.sort((a,b)=>(num(b.liquidity?.usd)||0)-(num(a.liquidity?.usd)||0));return valid[0]||null}
 function inspectSignal(p){
-if(!p)return {ok:false,reason:'Sin par de mercado o sin precio'};
+if(!p)return {ok:false,reason:'Sin par de mercado o precio'};
 const q={liquidity:num(p.liquidity?.usd),vol24:num(p.volume?.h24),vol5:num(p.volume?.m5),m5:num(p.priceChange?.m5),h1:num(p.priceChange?.h1),h24:num(p.priceChange?.h24),buys:num(p.txns?.m5?.buys),sells:num(p.txns?.m5?.sells),age:num(p.pairCreatedAt)};
-if(Object.values(q).some(v=>v===null))return {ok:false,reason:'Datos insuficientes del par'};
+if(Object.values(q).some(v=>v===null))return {ok:false,reason:'Datos de mercado incompletos'};
 const ageH=(Date.now()-q.age)/3600000;
-if(ageH<.33)return {ok:false,reason:'Par extremadamente nuevo (< 20 min)'};
-if(ageH>720)return {ok:false,reason:'Par con más de 30 días'};
-if(q.liquidity<18000)return {ok:false,reason:'Liquidez inferior a USD 18,000'};
-if(q.vol5<350)return {ok:false,reason:'Volumen en 5 min insuficiente'};
-if(q.vol24<3000)return {ok:false,reason:'Volumen diario insuficiente'};
-const rotation=q.vol24/q.liquidity;
-if(rotation<.1||rotation>35)return {ok:false,reason:'Rotación volumen/liquidez fuera de rango'};
-if(q.m5< -4||q.m5>18)return {ok:false,reason:'Movimiento de 5 minutos fuera de rango'};
-if(q.h1< -15||q.h1>70)return {ok:false,reason:'Movimiento de 1 hora fuera de rango'};
-if(q.h24< -45||q.h24>200)return {ok:false,reason:'Movimiento diario fuera de rango'};
-if(q.buys+q.sells<8||q.sells<3)return {ok:false,reason:'Muy pocas operaciones o ventas'};
-if(q.buys<q.sells*.9)return {ok:false,reason:'Presión compradora insuficiente'};
-return {ok:true,reason:'Actividad compatible con filtros; seguridad aún sin verificar'}
+if(ageH<1)return {ok:false,reason:'Par demasiado reciente (< 1 h)'};
+if(ageH>720)return {ok:false,reason:'Par anterior a 30 días'};
+if(q.liquidity<30000)return {ok:false,reason:'Liquidez menor a USD 30,000'};
+if(q.vol5<700||q.vol24<15000)return {ok:false,reason:'Volumen insuficiente'};
+const rot=q.vol24/q.liquidity;
+if(rot<.3||rot>25)return {ok:false,reason:'Rotación anómala del volumen'};
+if(q.m5<1||q.m5>12)return {ok:false,reason:'Impulso 5 min inadecuado'};
+if(q.h1<4||q.h1>40)return {ok:false,reason:'Impulso 1 h inadecuado'};
+if(q.h24< -15||q.h24>130)return {ok:false,reason:'Movimiento diario excesivo'};
+if(q.buys+q.sells<20||q.sells<5)return {ok:false,reason:'Transacciones insuficientes'};
+if(q.buys<q.sells*1.2)return {ok:false,reason:'Compras no superan suficiente a ventas'};
+const buyRatio=q.buys/Math.max(1,q.sells);
+const score=Math.min(100,Math.round(
+(Math.min(1,q.liquidity/120000)*25)+
+(Math.min(1,q.vol5/7000)*20)+
+(Math.min(2.5,buyRatio)/2.5*25)+
+(Math.min(1,q.m5/7)*15)+
+(Math.min(1,q.h1/20)*15)));
+return {ok:true,score,reason:'Señales de mercado favorables (seguridad aún sin verificar)'}
 }
 function signal(p){return inspectSignal(p).ok}
 function reportMarket(m){
-const reasons={},rejected=[],qualifying=[];
+const reasons={},rejected=[],qualifying=[],wait=[],now=Date.now(),seen=new Set();
 for(const mint of m.mints){
 const p=m.byMint[mint],result=inspectSignal(p);
-if(result.ok)qualifying.push({mint,p});
-else{
+if(!result.ok){
 reasons[result.reason]=(reasons[result.reason]||0)+1;
+confirmations.delete(mint);
 if(p&&rejected.length<5)rejected.push({symbol:String(p.baseToken?.symbol||'?').slice(0,28),reason:result.reason});
+continue;
 }
+seen.add(mint);
+const quote=num(p.priceUsd),pair=p.pairAddress,old=confirmations.get(mint);
+const stable=old&&old.pair===pair&&now-old.last<=120000&&quote>=old.price*.98&&quote<=old.price*1.15;
+const state=stable?{count:Math.min(4,old.count+1),first:old.first,last:now,price:quote,pair}:
+{count:1,first:now,last:now,price:quote,pair};
+confirmations.set(mint,state);
+if(state.count>=2&&now-state.first>=10000){
+qualifying.push({mint,p,score:result.score});
+}else wait.push(mint);
 }
-qualifying.sort((a,b)=>(num(b.p.liquidity?.usd)||0)-(num(a.p.liquidity?.usd)||0));
+for(const [mint,state] of confirmations){if(now-state.last>180000||(!seen.has(mint)&&!data.open.some(p=>p.mint===mint)))confirmations.delete(mint)}
+qualifying.sort((a,b)=>b.score-a.score||(num(b.p.liquidity?.usd)||0)-(num(a.p.liquidity?.usd)||0));
 const counts=Object.entries(reasons).sort((a,b)=>b[1]-a[1]).slice(0,8);
 const feed=m.sources.map(f=>esc(f.label)+': <b>'+f.n+'</b>'+(f.error?' (no disponible)':'')).join(' · ');
-diagnostics='<p><b>Explorados:</b> '+m.mints.length+' direcciones · '+Object.keys(m.byMint).length+' con par válido · <b>'+qualifying.length+' que pasan filtros de mercado</b> (no implica seguridad on-chain).</p>'+
+diagnostics='<p><b>Universo:</b> '+m.mints.length+' tokens examinados · '+Object.keys(m.byMint).length+' con par válido · <b>'+qualifying.length+' con señal confirmada</b> · '+wait.length+' en primera revisión.</p>'+
 '<p><b>Fuentes:</b> '+feed+'</p>'+
-(qualifying.length===0?'<p class="amber"><b>Sin operaciones:</b> ninguno de los tokens explorados cumple todas las condiciones de mercado. No se abrirán operaciones para forzar actividad.</p>':'<p><b>'+qualifying.length+' candidatos de mercado</b> sujetos a límites de caja, pausas y posiciones. No están auditados.</p>')+
-'<p><b>Principales motivos de descarte:</b> '+(counts.length?counts.map(([why,n])=>'<span style="display:inline-block;margin:3px 6px 3px 0;padding:5px 8px;border-radius:7px;background:#151820">'+esc(why)+': <b>'+n+'</b></span>').join(''):'Ninguno')+'</p>'+
-(rejected.length?'<p><b>Ejemplos descartados:</b> '+rejected.map(x=>esc(x.symbol)+' ('+esc(x.reason)+')').join(' · ')+'</p>':'')+
-(m.failures.length?'<p class="amber"><b>Fuentes parcialmente inaccesibles:</b> '+m.failures.map(esc).join(' · ')+'</p>':'')+
-'<p class="amber">Las listas destacadas pueden incluir promoción pagada. Pasar estos filtros no equivale a una auditoría, ni acredita que un token pueda venderse.</p>';
+(qualifying.length===0?'<p class="amber">No se abre operación sin dos lecturas favorables consecutivas; las pérdidas por forzar actividad son un riesgo.</p>':
+'<p>Señales ordenadas por actividad, volumen y presión compradora. No representan una predicción ni auditoría de sellabilidad.</p>')+
+'<p><b>Descartes:</b> '+(counts.length?counts.map(([why,n])=>'<span style="display:inline-block;margin:3px 6px 3px 0;padding:5px 8px;border-radius:7px;background:#151820">'+esc(why)+': <b>'+n+'</b></span>').join(''):'Ninguno')+'</p>'+
+(rejected.length?'<p><b>Ejemplos:</b> '+rejected.map(x=>esc(x.symbol)+' ('+esc(x.reason)+')').join(' · ')+'</p>':'')+
+(m.failures.length?'<p class="amber"><b>Fuentes con errores:</b> '+m.failures.map(esc).join(' · ')+'</p>':'')+
+'<p class="amber">No hay aprobación de seguridad on-chain ni prueba real de venta. Las fuentes de boosts pueden contener promociones pagadas.</p>';
 return qualifying
 }
-
 async function market(){
 const feedSpecs=[
 {label:'Perfiles recientes',url:'https://api.dexscreener.com/token-profiles/latest/v1'},
