@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<title>Solana Bot · Scalping simulado V7</title>
+<title>Solana Bot · Motor de decisiones V8</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}
 body{background:#101116;color:#f5f5f5;font:15px/1.48 system-ui,-apple-system,sans-serif;max-width:840px;margin:auto;padding:22px}
@@ -16,7 +16,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 @media(max-width:500px){body{padding:14px}.card{padding:17px}.metrics{gap:8px}.metric{padding:11px}.metric b{font-size:19px}table{font-size:12px}th,td{padding:8px 4px}}
 </style></head><body>
 <p><a href="./index.html">← Wallet</a> · <a href="./radar.html">Radar</a> · <a href="./auditoria.html">Auditoría</a></p>
-<h1>Motor automático · Scalping V7</h1><p class="green"><b>EDICIÓN V7 · RUTA ESTABLE</b> · 27 de octubre de 2026</p>
+<h1>Motor de decisiones · Scalping V8</h1><p class="green"><b>VERSIÓN V8 · RUTA ESTABLE</b> · 27 de octubre de 2026</p>
 <p class="amber"><b>META ASPIRACIONAL: +$10 MXN NETOS POR MINUTO, partiendo de $100 MXN.</b> Es un objetivo extraordinariamente arriesgado (10% del capital inicial cada minuto), no un ingreso previsto ni garantizado. El sistema no inventará ganancias ni abrirá posiciones sin una señal.</p>
 <p class="amber"><b>OBJETIVO: CRECIMIENTO NETO. META: $100 → $200 MXN y siguientes duplicaciones.</b> No es una promesa de ganancias: pueden producirse pérdidas importantes.</p>
 <p class="amber"><b>MODO DEMOSTRACIÓN. No usa SOL, no opera en tu wallet y no realiza retiros.</b> Solo utiliza precios públicos de mercado. Las salidas son hipotéticas: un token real podría impedir vender o ejecutarse mucho peor.</p>
@@ -54,14 +54,14 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <p><b>Protecciones:</b> reserva intocable para nuevas entradas, máximo 4.5% del patrimonio de riesgo agregado estimado si se ejecutaran todos los stops a sus precios objetivo, pausa de nuevas entradas con caída estimada del 5% diario y 90 segundos antes de recomprar un token vendido. Los gaps de precio pueden superar todos estos límites.</p>
 <p>Al acumular al menos <b>$1,000 MXN de ganancias netas realizadas no retiradas</b>, y si la caja lo permite, registra un <b>retiro exclusivamente virtual</b> a Bitso. No mueve tokens ni dinero real.</p>
 </div>
-<div class="card"><h2>Direcciones adicionales para observar</h2><p class="muted">El motor puede investigar hasta 145 direcciones de Solana provenientes de hasta ocho consultas a DexScreener. Algunas fuentes son promocionadas o resultados de búsqueda; no equivalen a una lista de las mejores monedas ni a una auditoría. Si quieres seguir un token específico, añade su mint público.</p>
+<div class="card"><h2>Direcciones adicionales para observar</h2><p class="muted">El motor investiga hasta 145 direcciones de Solana con reparto equilibrado entre 14 consultas a DexScreener. Algunas fuentes son promocionadas o resultados de búsqueda; no equivalen a una lista de las mejores monedas ni a una auditoría. Si quieres seguir un token específico, añade su mint público.</p>
 <label for="mint">Mint público de Solana</label><input id="mint" type="text" placeholder="Pega la dirección pública del token">
 <button id="add">Agregar a observación</button><div id="watchlist" class="note"></div>
 </div>
 <div class="card"><h2>Posiciones de prueba</h2><div id="open">Sin posiciones.</div></div>
 <div class="card"><h2>Historial de operaciones simuladas</h2><div id="history">Sin operaciones.</div>
 <button id="export" class="secondary">Exportar historial CSV</button><button id="reset" class="danger">Reiniciar simulación</button>
-<p class="note">El motor puede pasar mucho tiempo sin abrir una posición: no fuerza operaciones. La V7 inicia una cuenta virtual independiente con $100 MXN para no mezclarla con pruebas anteriores. La actividad de las versiones previas permanece en su propio almacenamiento de navegador. El historial se guarda localmente en este navegador, no en GitHub ni en un servidor. Reiniciar borra el historial local tras confirmación. No equivale a un backtest histórico ni a una prueba de rentabilidad futura.</p>
+<p class="note">El motor puede pasar mucho tiempo sin abrir una posición: no fuerza operaciones. La V8 conserva los resultados y posiciones virtuales de la V7 para continuar desde el mismo estado simulado. La actividad de las versiones previas permanece en su propio almacenamiento de navegador. El historial se guarda localmente en este navegador, no en GitHub ni en un servidor. Reiniciar borra el historial local tras confirmación. No equivale a un backtest histórico ni a una prueba de rentabilidad futura.</p>
 </div>
 <div class="card"><h2>Estado de seguridad</h2><p class="red"><b>Compras reales desactivadas.</b> No hay validación completa de holders, sellabilidad, liquidez bloqueada, historial del creador o extensiones de todos los tokens. No se autoriza operar fondos ni acceder a la wallet desde esta simulación.</p><p id="lastError" class="amber"></p></div>
 <script>
@@ -230,10 +230,16 @@ const feedSpecs=[
 {label:'Anuncios (publicidad pagada)',url:'https://api.dexscreener.com/ads/latest/v1',kind:'tokens'},
 {label:'Búsqueda memecoin',url:'https://api.dexscreener.com/latest/dex/search?q=meme',kind:'pairs'},
 {label:'Búsqueda pump',url:'https://api.dexscreener.com/latest/dex/search?q=pump',kind:'pairs'},
-{label:'Búsqueda BONK',url:'https://api.dexscreener.com/latest/dex/search?q=bonk',kind:'pairs'}
+{label:'Búsqueda BONK',url:'https://api.dexscreener.com/latest/dex/search?q=bonk',kind:'pairs'},
+{label:'SOL / USDC',url:'https://api.dexscreener.com/latest/dex/search?q=SOL%2FUSDC',kind:'pairs'},
+{label:'Búsqueda WIF',url:'https://api.dexscreener.com/latest/dex/search?q=WIF',kind:'pairs'},
+{label:'Búsqueda POPCAT',url:'https://api.dexscreener.com/latest/dex/search?q=POPCAT',kind:'pairs'},
+{label:'Búsqueda FARTCOIN',url:'https://api.dexscreener.com/latest/dex/search?q=FARTCOIN',kind:'pairs'},
+{label:'Búsqueda RAY',url:'https://api.dexscreener.com/latest/dex/search?q=RAY',kind:'pairs'},
+{label:'Búsqueda PENGU',url:'https://api.dexscreener.com/latest/dex/search?q=PENGU',kind:'pairs'}
 ];
 const responses=await Promise.allSettled(feedSpecs.map(f=>json(f.url)));
-const sources=[],addresses=[],failures=[];
+const sources=[],groups=[],failures=[];
 for(let i=0;i<responses.length;i++){
 const r=responses[i],spec=feedSpecs[i];
 if(r.status==='fulfilled'){
@@ -241,17 +247,19 @@ const found=spec.kind==='pairs'?r.value?.pairs:r.value;
 if(Array.isArray(found)){
 const mints=[...new Set(found.filter(p=>p.chainId==='solana')
 .map(p=>spec.kind==='pairs'?p.baseToken?.address:p.tokenAddress).filter(isMint))].slice(0,30);
-addresses.push(...mints);sources.push({label:spec.label,n:mints.length});continue;
+groups.push(mints);sources.push({label:spec.label,n:mints.length});continue;
 }
 }
 const why=r.status==='rejected'?String(r.reason?.message||r.reason):'Respuesta inválida';
-failures.push(spec.label+': '+why);sources.push({label:spec.label,n:0,error:true});
+failures.push(spec.label+': '+why);groups.push([]);sources.push({label:spec.label,n:0,error:true});
 }
-if(!addresses.length&&!data.watch.length&&!data.open.length)throw Error('Ninguna fuente devolvió tokens Solana: '+failures.join(' | '));
-discoveryCache={addresses:[...new Set(addresses)],sources,failures};
+if(!groups.some(g=>g.length)&&!data.watch.length&&!data.open.length)throw Error('Ninguna fuente devolvió tokens Solana: '+failures.join(' | '));
+discoveryCache={groups,sources,failures};
 discoveryAt=now;
 }
-const unique=[...new Set([...data.open.map(p=>p.mint),...data.watch,...discoveryCache.addresses])].slice(0,145);
+const unique=[...new Set([...data.open.map(p=>p.mint),...data.watch])];
+// Reparto equilibrado: ninguna lista pagada o de lanzamientos monopoliza el límite de 145 tokens.
+for(let j=0;j<30&&unique.length<145;j++)for(const group of discoveryCache.groups){const mint=group[j];if(mint&&!unique.includes(mint)&&unique.length<145)unique.push(mint)}
 if(!unique.length)throw Error('El universo de Solana está vacío');
 const chunks=[];for(let i=0;i<unique.length;i+=30)chunks.push(unique.slice(i,i+30));
 const attempts=await Promise.allSettled(chunks.map(chunk=>json('https://api.dexscreener.com/tokens/v1/solana/'+chunk.join(','))));
