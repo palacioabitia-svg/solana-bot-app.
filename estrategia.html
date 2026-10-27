@@ -22,7 +22,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <p class="amber"><b>MODO DEMOSTRACIÓN. No usa SOL, no opera en tu wallet y no realiza retiros.</b> Solo utiliza precios públicos de mercado. Las salidas son hipotéticas: un token real podría impedir vender o ejecutarse mucho peor.</p>
 <div class="card"><h2>Control de simulación</h2>
 <button id="start">Iniciar simulación automática</button><button id="stop" class="secondary">Detener</button><button id="once" class="secondary">Ejecutar revisión ahora</button>
-<p id="state" class="muted">Detenida. Los datos guardados solo están en este navegador.</p><p id="lastDecision" class="amber">Última decisión: sin escanear.</p>
+<p id="state" class="muted">Detenida. Los datos guardados solo están en este navegador.</p><p id="lastDecision" class="amber">Última decisión: sin escanear.</p><p id="healthStatus" class="note">Estado del escaneo: todavía no se ha revisado el mercado.</p><p id="topError" class="red"></p>
 <p class="note">Cuando está activa, consulta aproximadamente cada <b>15 segundos (4 revisiones por minuto)</b> solo con esta página abierta y visible. Puede abrir posiciones virtuales cuando observa un precio que se mueve al alza entre consultas y cumple los filtros de actividad, riesgo y capital. No opera por obligación. Al cerrarla deja de trabajar. No es un bot de ejecución permanente.</p>
 <p id="source" class="note">Tipo de cambio USD/MXN: pendiente de consulta.</p><p id="scan-summary" class="note">Sin evaluación de mercado.</p><p id="pace" class="note">Revisiones y operaciones recientes: 0.</p><p class="note">Scalping: busca movimientos cortos cada 15 segundos; solo considera compra si el precio consultado cambió entre revisiones. DexScreener no proporciona cotizaciones ejecutables ni garantiza una actualización cada 15 segundos.</p><p class="note" id="sources-status">Buscando fuentes de mercado…</p><div id="diagnostics" class="note">Pulsa «Iniciar simulación automática» para consultar el mercado.</div><div id="candidates" class="note" style="overflow-x:auto"></div><details style="margin-top:14px"><summary>Ver las últimas decisiones del bot</summary><div id="decisions" class="note">Sin decisiones registradas.</div></details>
 </div>
@@ -47,14 +47,14 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <h2>Reglas del simulador · crecimiento con control de pérdidas</h2>
 <p><b>Objetivo por etapas:</b> $100 → $200 → $400 → $800 MXN. No existe garantía de alcanzar ninguna meta. El patrimonio virtual varía con las posiciones y las comisiones.</p>
 <p><b>Hasta 10 posiciones abiertas</b>, sin obligación de ocuparlas. Reserva virtual <b>$30 MXN</b>, posición de hasta <b>8.5% del patrimonio al inicio</b> (el porcentaje disminuye conforme crece el capital, para permitir más posiciones), y riesgo objetivo <b>1.5% del patrimonio por entrada</b> suponiendo que se pueda ejecutar un stop; las pérdidas reales pueden superar ese límite.</p>
-<p><b>Antes de entrar:</b> liquidez suficiente, presión de compras, tendencia moderadamente positiva y movimiento favorable del precio entre dos consultas. Se revisa el mercado aproximadamente cada 15 segundos mientras la página esté visible. No se fuerza una operación.</p>
+<p><b>Antes de entrar:</b> liquidez suficiente, presión compradora, tendencia moderadamente positiva y actualización favorable del precio o de las compras/volumen entre dos consultas. Se admiten pares establecidos con más de 30 días; la antigüedad por sí sola no justifica excluirlos. Se revisa el mercado aproximadamente cada 15 segundos mientras la página esté visible. No se fuerza una operación.</p>
 <p><b>Salidas por deterioro:</b> también cierra virtualmente si la liquidez cae de forma acusada, predominan las ventas o se detecta una caída extrema en 5 minutos. Estas son alertas de mercado, NO una auditoría de seguridad on-chain; puede cerrar tarde y con pérdidas.</p>
 <p><b>Salidas hipotéticas del modo scalping:</b> stop por caída del precio del 7%; toma de beneficio desde <b>+3% NETO estimado</b> si el impulso se debilita y cierre prioritario en <b>+6% neto</b>; seguimiento de ganadoras desde +4% neto; y límite de mantenimiento de <b>90 minutos</b>. Ningún stop ni salida está garantizado. Mantener una posición 90 minutos puede igualmente producir pérdidas; el objetivo es evitar ventas por tiempo excesivamente cortas.</p>
 <p><b>Costos estimados:</b> 2.2% del valor más $0.05 MXN por cada compra o venta. No son cotizaciones ejecutables. Con posiciones pequeñas, el punto de equilibrio exige una subida considerable. Las ganancias que queden en la caja virtual se reinvierten automáticamente.</p>
 <p><b>Protecciones:</b> reserva intocable para nuevas entradas, máximo 4.5% del patrimonio de riesgo agregado estimado si se ejecutaran todos los stops a sus precios objetivo, pausa de nuevas entradas con caída estimada del 5% diario y 90 segundos antes de recomprar un token vendido. Los gaps de precio pueden superar todos estos límites.</p>
 <p>Al acumular al menos <b>$1,000 MXN de ganancias netas realizadas no retiradas</b>, y si la caja lo permite, registra un <b>retiro exclusivamente virtual</b> a Bitso. No mueve tokens ni dinero real.</p>
 </div>
-<div class="card"><h2>Direcciones adicionales para observar</h2><p class="muted">El motor investiga hasta 145 direcciones de Solana con reparto equilibrado entre 14 consultas a DexScreener. Algunas fuentes son promocionadas o resultados de búsqueda; no equivalen a una lista de las mejores monedas ni a una auditoría. Si quieres seguir un token específico, añade su mint público.</p>
+<div class="card"><h2>Direcciones adicionales para observar</h2><p class="muted">El motor investiga hasta 145 direcciones de Solana con reparto equilibrado entre 14 consultas a DexScreener; los pares maduros ya no se descartan solo por superar 30 días. Algunas fuentes son promocionadas o resultados de búsqueda; no equivalen a una lista de las mejores monedas ni a una auditoría. Si quieres seguir un token específico, añade su mint público.</p>
 <label for="mint">Mint público de Solana</label><input id="mint" type="text" placeholder="Pega la dirección pública del token">
 <button id="add">Agregar a observación</button><div id="watchlist" class="note"></div>
 </div>
@@ -83,7 +83,7 @@ const initial=()=>({cash:START,open:[],events:[],watch:[],paid:0,realizedNet:0,d
 function load(){try{const v=JSON.parse(localStorage.getItem(KEY));if(!v||!Number.isFinite(v.cash)||!Array.isArray(v.open)||!Array.isArray(v.events)||!Array.isArray(v.watch))return initial();v.cooldowns=v.cooldowns||{};v.haltDay=v.haltDay||'';return v}catch{return initial()}}
 let data=load();
 function persist(){try{localStorage.setItem(KEY,JSON.stringify(data))}catch(e){$('lastError').textContent='No se pudo guardar la simulación en este navegador: '+e.message}}
-function date(t){return new Date(t).toLocaleString('es-MX',{dateStyle:'short',timeStyle:'short'})}
+function date(t){return new Date(t).toLocaleString('es-MX',{dateStyle:'short',timeStyle:'medium'})}
 function equity(){return data.cash+data.open.reduce((acc,p)=>acc+(lastPrices[p.mint]?.price>0&&lastPrices[p.mint].pair===p.pair&&fx?Math.max(0,p.qty*lastPrices[p.mint].price*fx.rate*(1-ROUND_COST)-GAS):p.cost),0)}
 function realizedAndUnrealized(){return equity()+data.paid-START}
 function exitValue(qty,price,rate){return Math.max(0,qty*price*rate*(1-ROUND_COST)-GAS)}
@@ -95,6 +95,9 @@ function saveRunning(){try{localStorage.setItem(RUN_KEY,running?'1':'0')}catch{}
 function render(){
 $('scan-summary').textContent=summary;
 $('lastDecision').textContent='Última decisión: '+lastDecision;
+const ageSinceScan=data.lastCheck?Math.max(0,Math.round((Date.now()-data.lastCheck)/1000)):null;
+$('healthStatus').textContent=!running?'Monitor detenido. Pulsa Iniciar simulación automática.':document.hidden?'Monitor en pausa: Phantom no está visible.':busy?'Revisión en curso · esperando proveedores…':ageSinceScan===null?'Monitor activo · preparando primera revisión':ageSinceScan>90?'ALERTA: última revisión válida hace '+ageSinceScan+' s. Comprueba conexión y errores.':'Monitor activo · última revisión válida hace '+ageSinceScan+' s.';
+$('topError').textContent=$('lastError').textContent||'';
 $('decisions').innerHTML=decisionHistory.length?decisionHistory.map(x=>'<p><small>'+date(x.t)+'</small> <b>'+esc(x.status)+'</b> · '+esc(x.message)+'</p>').join(''):'Sin decisiones registradas.';
 const cutoff=Date.now()-60000;recentScans=recentScans.filter(t=>t>=cutoff);const minuteEvents=data.events.filter(e=>e.t>=cutoff&&/SIMULADA/.test(e.type));
 const closedTrades=data.events.filter(e=>e.type.startsWith('VENTA SIMULADA')&&Number.isFinite(e.pnl));
@@ -154,7 +157,6 @@ if(Object.values(q).some(v=>v===null))return {ok:false,score:0,reason:'Datos inc
 const age=(Date.now()-q.created)/3600000;
 let reason='';
 if(age<.25)reason='Menos de 15 min de antigüedad';
-else if(age>720)reason='Más de 30 días';
 else if(q.liq<18000)reason='Liquidez inferior a USD 18,000';
 else if(q.vol5<300||q.vol24<3500)reason='Volumen insuficiente';
 else if(q.vol24/q.liq<.12||q.vol24/q.liq>35)reason='Rotación anómala';
