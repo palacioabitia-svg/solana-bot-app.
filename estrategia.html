@@ -36,7 +36,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 </div>
 <div class="card">
 <h2>Reglas automáticas de riesgo</h2>
-<p>Capital de partida: <b>100 MXN</b>. Reserva: <b>30 MXN</b>. Posición máxima: <b>10% del patrimonio</b>. Riesgo objetivo: <b>2%</b> por operación. Hasta <b>2 posiciones</b>.</p>
+<p>Capital de partida: <b>100 MXN</b>. Si falta la cotización del mismo par para una posición abierta, se bloquean nuevas entradas. La valoración sin cotización conserva temporalmente el costo histórico y NO representa un precio de venta real. Reserva: <b>30 MXN</b>. Posición máxima: <b>10% del patrimonio</b>. Riesgo objetivo: <b>2%</b> por operación. Hasta <b>2 posiciones</b>.</p>
 <p>Pausa de nuevas entradas durante 6 horas después de cerrar un token. Salida hipotética por caída del precio de referencia de <b>12%</b>, objetivo de <b>40%</b> o trailing stop de <b>15%</b> después de superar <b>20%</b>. Duración máxima de <b>24 horas</b>. Pausa por caída estimada diaria del patrimonio de <b>5%</b>.</p>
 <p>Costos conservadores <i>supuestos</i>: <b>2.2%</b> del importe en cada lado (comisiones, spread y deslizamiento combinados) + <b>0.05 MXN</b> por cada lado. No son tarifas reales verificadas. Una salida puede fallar incluso con stop configurado.</p>
 <p>Si las ganancias realizadas netas no retiradas alcanzan <b>1,000 MXN</b> y hay caja suficiente por encima de la reserva, registra una <b>transferencia exclusivamente virtual</b> a Bitso. No solicita firmas ni claves.</p>
@@ -147,12 +147,12 @@ async function tick(){
 if(busy||document.hidden)return;busy=true;$('lastError').textContent='';render();
 try{
 const rate=(await getFx()).rate;refreshDay();
-const m=await market(),now=Date.now(),prices={};let n=0,candidates=0,opened=0;
+const m=await market(),now=Date.now(),prices={};let n=0,candidates=0,opened=0,priceGap=false;
 for(const [mint,p] of Object.entries(m.byMint)){const price=num(p.priceUsd);if(price>0){prices[mint]={price,pair:p.pairAddress,at:now};n++}}
 lastPrices=prices;
 for(const pos of [...data.open]){
 const p=m.byMint[pos.mint],quote=prices[pos.mint];
-if(!p||!quote||quote.pair!==pos.pair){$('lastError').textContent='Algunas posiciones no tienen cotización del mismo par: se mantienen sin valorar ni cerrar.';continue}
+if(!p||!quote||quote.pair!==pos.pair){priceGap=true;$('lastError').textContent='Algunas posiciones no tienen cotización del mismo par: se mantienen sin valorar ni cerrar.';continue}
 const price=quote.price;pos.peak=Math.max(pos.peak,price);
 const factor=price/pos.entryPrice;const hours=(now-pos.opened)/3600000;
 if(factor<=1-STOP)closeTrade(pos,price,rate,'STOP REFERENCIAL');
@@ -162,7 +162,7 @@ else if(hours>=24)closeTrade(pos,price,rate,'TIEMPO');
 }
 maybeVirtualPayout();
 if(equity()<=data.dayStart*(1-DAILY)){data.haltDay=data.day;$('lastError').textContent='Caída diaria estimada ≥ 5%: nuevas entradas bloqueadas; salidas simuladas siguen vigilándose mientras la página permanezca visible.'}
-if(running&&data.haltDay!==data.day){
+if(running&&data.haltDay!==data.day&&!priceGap){
 for(const mint of m.mints){
 if(data.open.length>=MAX_POSITIONS)break;
 const p=m.byMint[mint];
@@ -170,7 +170,7 @@ if(p&&signal(p)){candidates++;const before=data.open.length;openTrade(mint,p,rat
 }
 }
 data.lastCheck=now;lastReview=now;
-summary='Última revisión: '+n+' tokens cotizados, '+candidates+' señales de mercado, '+opened+' nuevas posiciones virtuales. '+date(now)+'. Las señales no equivalen a verificación de seguridad.';
+summary='Última revisión: '+n+' tokens cotizados, '+candidates+' señales de mercado, '+opened+' nuevas posiciones virtuales. '+(priceGap?'Entradas bloqueadas por falta de cotización de una posición. ':'')+date(now)+'. Las señales no equivalen a verificación de seguridad.';
 persist();
 }catch(e){summary='Revisión fallida; los datos no están actualizados.';$('lastError').textContent='Revisión cancelada; sin nuevas operaciones: '+e.message+'. No se inventaron precios ni tipo de cambio.'}
 finally{busy=false;render()}}
