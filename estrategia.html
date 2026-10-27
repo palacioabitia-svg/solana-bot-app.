@@ -263,18 +263,22 @@ for(const pos of [...data.open]){
 const p=m.byMint[pos.mint],quote=prices[pos.mint];
 if(!p||!quote||quote.pair!==pos.pair){priceGap=true;$('lastError').textContent='Algunas posiciones no tienen cotización del mismo par: se mantienen sin valorar ni cerrar.';continue}
 const price=quote.price;pos.peak=Math.max(pos.peak,price);
-const factor=price/pos.entryPrice;const hours=(now-pos.opened)/3600000;
-if(factor<=1-STOP)closeTrade(pos,price,rate,'STOP REFERENCIAL');
-else if(factor>=1+TAKE)closeTrade(pos,price,rate,'OBJETIVO');
-else if(pos.peak>=pos.entryPrice*(1+ARM)&&price<=pos.peak*(1-TRAIL))closeTrade(pos,price,rate,'TRAILING');
-else if(hours>=MAX_HOLD_HOURS)closeTrade(pos,price,rate,'TIEMPO RÁPIDO');
+const factor=price/pos.entryPrice,net=(exitValue(pos.qty,price,rate)-pos.cost)/pos.cost;
+const peakNet=(exitValue(pos.qty,pos.peak,rate)-pos.cost)/pos.cost;
+const hours=(now-pos.opened)/3600000;
+const buys=num(p.txns?.m5?.buys),sells=num(p.txns?.m5?.sells),fiveMin=num(p.priceChange?.m5);
+if(factor<=1-STOP)closeTrade(pos,price,rate,'LÍMITE DE PÉRDIDA REFERENCIAL');
+else if(net>=TAKE)closeTrade(pos,price,rate,'META DE BENEFICIO NETO');
+else if(peakNet>=ARM&&price<=pos.peak*(1-TRAIL))closeTrade(pos,price,rate,'SEGUIMIENTO DE GANANCIA');
+else if(net>=.08&&((fiveMin!==null&&fiveMin<0)||(buys!==null&&sells!==null&&sells>buys*1.4)))closeTrade(pos,price,rate,'GANANCIA NETA · REVISIÓN DE TENDENCIA');
+else if(hours>=MAX_HOLD_HOURS)closeTrade(pos,price,rate,'TIEMPO MÁXIMO 6H');
 }
 maybeVirtualPayout();
 if(equity()<=data.dayStart*(1-DAILY)){data.haltDay=data.day;$('lastError').textContent='Caída diaria estimada ≥ 5%: nuevas entradas bloqueadas; salidas simuladas siguen vigilándose mientras la página permanezca visible.'}
 if(running&&data.haltDay!==data.day&&!priceGap){
 for(const item of qualifying){
-if(data.open.length>=MAX_POSITIONS)break;
-const before=data.open.length;openTrade(item.mint,item.p,rate);if(data.open.length>before)opened++;
+if(data.open.length>=MAX_POSITIONS||opened>=MAX_NEW_PER_SCAN)break;
+if(openTrade(item.mint,item.p,rate))opened++;
 }
 }
 data.lastCheck=now;lastReview=now;recentScans.push(now);
