@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Solana Bot · Simulación automática V3</title>
+<title>Solana Bot · Simulación rápida V4</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}
 body{background:#101116;color:#f5f5f5;font:15px/1.48 system-ui,-apple-system,sans-serif;max-width:840px;margin:auto;padding:22px}
@@ -16,13 +16,13 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 @media(max-width:500px){body{padding:14px}.card{padding:17px}.metrics{gap:8px}.metric{padding:11px}.metric b{font-size:19px}table{font-size:12px}th,td{padding:8px 4px}}
 </style></head><body>
 <p><a href="./index.html">← Wallet</a> · <a href="./radar.html">Radar</a> · <a href="./auditoria.html">Auditoría</a></p>
-<h1>Motor automático · Simulación V3</h1>
+<h1>Motor automático · Simulación rápida V4</h1>
 <p class="amber"><b>MODO DEMOSTRACIÓN. No usa SOL, no opera en tu wallet y no realiza retiros.</b> Solo utiliza precios públicos de mercado. Las salidas son hipotéticas: un token real podría impedir vender o ejecutarse mucho peor.</p>
 <div class="card"><h2>Control de simulación</h2>
 <button id="start">Iniciar simulación automática</button><button id="stop" class="secondary">Detener</button><button id="once" class="secondary">Ejecutar revisión ahora</button>
 <p id="state" class="muted">Detenida. Los datos guardados solo están en este navegador.</p>
-<p class="note">Cuando está activa, consulta aproximadamente cada 60 segundos <b>solo con esta página abierta y visible</b>. Al cerrarla deja de trabajar. No es un bot de ejecución permanente.</p>
-<p id="source" class="note">Tipo de cambio USD/MXN: pendiente de consulta.</p><p id="scan-summary" class="note">Sin evaluación de mercado.</p><div id="diagnostics" class="note">Pulsa «Iniciar simulación automática» para consultar el mercado.</div>
+<p class="note">Cuando está activa, consulta aproximadamente cada <b>15 segundos (4 revisiones por minuto)</b> solo con esta página abierta y visible. Puede registrar varias operaciones virtuales por revisión si existen candidatos, pero no garantiza ninguna. Al cerrarla deja de trabajar. No es un bot de ejecución permanente.</p>
+<p id="source" class="note">Tipo de cambio USD/MXN: pendiente de consulta.</p><p id="scan-summary" class="note">Sin evaluación de mercado.</p><p id="pace" class="note">Revisiones y operaciones recientes: 0.</p><div id="diagnostics" class="note">Pulsa «Iniciar simulación automática» para consultar el mercado.</div>
 </div>
 <div class="metrics" aria-label="Resultados simulados">
 <div class="metric"><span>Capital inicial</span><b>$100.00</b><span>MXN simulados</span></div>
@@ -30,16 +30,16 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <div class="metric"><span>Disponible</span><b id="cash">$100.00</b><span>MXN de caja simulada</span></div>
 <div class="metric"><span>Resultado neto acumulado</span><b id="pnl">$0.00</b><span>MXN; incluye retiros simulados</span></div>
 <div class="metric"><span>Reserva protegida</span><b>$30.00</b><span>No se utiliza para abrir posiciones</span></div>
-<div class="metric"><span>Posiciones abiertas</span><b id="positions">0 / 2</b><span>Máximo simultáneo</span></div>
+<div class="metric"><span>Posiciones abiertas</span><b id="positions">0 / 8</b><span>Máximo simultáneo</span></div>
 <div class="metric"><span>Retiros virtuales a Bitso</span><b id="payouts">$0.00</b><span>Sin transferencias reales</span></div>
 <div class="metric"><span>Última revisión</span><b id="updated">—</b><span>Solo precio de referencia, no cotización</span></div>
 </div>
 <div class="card">
 <h2>Reglas automáticas de riesgo</h2>
-<p>Capital de partida: <b>100 MXN</b>. Si falta la cotización del mismo par para una posición abierta, se bloquean nuevas entradas. La valoración sin cotización conserva temporalmente el costo histórico y NO representa un precio de venta real. Reserva: <b>30 MXN</b>. Posición máxima: <b>10% del patrimonio</b>. Riesgo objetivo: <b>2%</b> por operación. Hasta <b>2 posiciones</b>.</p>
-<p>Pausa de nuevas entradas durante 6 horas después de cerrar un token. Salida hipotética por caída del precio de referencia de <b>12%</b>, objetivo de <b>40%</b> o trailing stop de <b>15%</b> después de superar <b>20%</b>. Duración máxima de <b>24 horas</b>. Pausa por caída estimada diaria del patrimonio de <b>5%</b>.</p>
+<p>Capital de partida: <b>100 MXN</b>. Si falta la cotización del mismo par para una posición abierta, se bloquean nuevas entradas. La valoración sin cotización conserva temporalmente el costo histórico y NO representa un precio de venta real. Reserva: <b>30 MXN</b>. Posición máxima: <b>8% del patrimonio</b>. Riesgo presupuestado: <b>2%</b> por operación. Hasta <b>8 posiciones</b>. El tamaño mínimo por operación virtual es <b>3 MXN</b>; por comisiones fijas una operación de ese tamaño puede resultar muy costosa.</p>
+<p>Pausa de nuevas entradas durante <b>45 segundos</b> después de cerrar un token. Salida hipotética por caída del precio de referencia de <b>8%</b>, objetivo de <b>18%</b> o trailing stop de <b>8%</b> después de superar <b>10%</b>. Duración máxima de <b>2 minutos</b>. Este plazo puede realizar ventas con pérdidas por comisiones incluso sin movimiento de precio. Pausa por caída estimada diaria del patrimonio de <b>5%</b>.</p>
 <p>Costos conservadores <i>supuestos</i>: <b>2.2%</b> del importe en cada lado (comisiones, spread y deslizamiento combinados) + <b>0.05 MXN</b> por cada lado. No son tarifas reales verificadas. Una salida puede fallar incluso con stop configurado.</p>
-<p>Si las ganancias realizadas netas no retiradas alcanzan <b>1,000 MXN</b> y hay caja suficiente por encima de la reserva, registra una <b>transferencia exclusivamente virtual</b> a Bitso. No solicita firmas ni claves.</p>
+<p>Muchas operaciones por minuto con $100 MXN pueden consumir el capital rápidamente: el motor mantiene un límite de caída diaria de 5% en sus resultados simulados. <b>Frecuencia no equivale a rentabilidad.</b></p><p>Si las ganancias realizadas netas no retiradas alcanzan <b>1,000 MXN</b> y hay caja suficiente por encima de la reserva, registra una <b>transferencia exclusivamente virtual</b> a Bitso. No solicita firmas ni claves.</p>
 </div>
 <div class="card"><h2>Direcciones adicionales para observar</h2><p class="muted">El motor también analiza hasta 75 perfiles de Solana procedentes de tres fuentes públicas de DexScreener (perfiles recientes, boosts recientes y boosts destacados). Estas listas no son una muestra imparcial: algunos tokens han pagado para aparecer destacados. Si quieres seguir un token específico, añade su mint público.</p>
 <label for="mint">Mint público de Solana</label><input id="mint" type="text" placeholder="Pega la dirección pública del token">
@@ -55,9 +55,10 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 'use strict';
 const $=id=>document.getElementById(id);
 const KEY='solana-paper-v2-20261027';
-const START=100,RESERVE=30,MAX_POSITIONS=2,MAX_STAKE=.10,RISK=.02,STOP=.12,TAKE=.40,TRAIL=.15,ARM=.20,DAILY=.05;
+const START=100,RESERVE=30,MAX_POSITIONS=8,MAX_STAKE=.08,RISK=.02,STOP=.08,TAKE=.18,TRAIL=.08,ARM=.10,DAILY=.05;
+const POLL_MS=15000,COOLDOWN_MS=45000,MAX_HOLD_HOURS=2/60,MIN_STAKE=3;
 const ROUND_COST=.022,GAS=.05,MAX_AGE_MS=7*86400000;
-let running=false,busy=false,fx=null,lastPrices={},lastReview=0,summary='Sin evaluación de mercado.',diagnostics='Todavía no se ha realizado una consulta.';
+let running=false,busy=false,fx=null,lastPrices={},lastReview=0,summary='Sin evaluación de mercado.',diagnostics='Todavía no se ha realizado una consulta.',recentScans=[];
 const money=n=>Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=v=>v===null||v===undefined||v===''?null:(Number.isFinite(Number(v))?Number(v):null);
@@ -73,6 +74,8 @@ function exitValue(qty,price,rate){return Math.max(0,qty*price*rate*(1-ROUND_COS
 function record(event){data.events.unshift(event);data.events=data.events.slice(0,400)}
 function render(){
 $('scan-summary').textContent=summary;
+const cutoff=Date.now()-60000;recentScans=recentScans.filter(t=>t>=cutoff);const minuteEvents=data.events.filter(e=>e.t>=cutoff&&/SIMULADA/.test(e.type));
+$('pace').innerHTML='<b>Últimos 60 s:</b> '+recentScans.length+' revisiones, '+minuteEvents.length+' operaciones virtuales (entradas y salidas). Son eventos simulados, no transacciones on-chain.';
 $('diagnostics').innerHTML=diagnostics;
 const eq=equity();$('equity').textContent='$'+money(eq);$('cash').textContent='$'+money(data.cash);
 $('pnl').textContent=(realizedAndUnrealized()>=0?'+':'')+'$'+money(realizedAndUnrealized());
@@ -118,18 +121,18 @@ if(!p)return {ok:false,reason:'Sin par de mercado o sin precio'};
 const q={liquidity:num(p.liquidity?.usd),vol24:num(p.volume?.h24),vol5:num(p.volume?.m5),m5:num(p.priceChange?.m5),h1:num(p.priceChange?.h1),h24:num(p.priceChange?.h24),buys:num(p.txns?.m5?.buys),sells:num(p.txns?.m5?.sells),age:num(p.pairCreatedAt)};
 if(Object.values(q).some(v=>v===null))return {ok:false,reason:'Datos insuficientes del par'};
 const ageH=(Date.now()-q.age)/3600000;
-if(ageH<6)return {ok:false,reason:'Par demasiado nuevo (< 6 h)'};
+if(ageH<.33)return {ok:false,reason:'Par extremadamente nuevo (< 20 min)'};
 if(ageH>720)return {ok:false,reason:'Par con más de 30 días'};
-if(q.liquidity<50000)return {ok:false,reason:'Liquidez inferior a USD 50,000'};
-if(q.vol5<1500)return {ok:false,reason:'Volumen en 5 min insuficiente'};
-if(q.vol24<10000)return {ok:false,reason:'Volumen diario insuficiente'};
+if(q.liquidity<18000)return {ok:false,reason:'Liquidez inferior a USD 18,000'};
+if(q.vol5<350)return {ok:false,reason:'Volumen en 5 min insuficiente'};
+if(q.vol24<3000)return {ok:false,reason:'Volumen diario insuficiente'};
 const rotation=q.vol24/q.liquidity;
-if(rotation<.2||rotation>20)return {ok:false,reason:'Rotación volumen/liquidez fuera de rango'};
-if(q.m5<.5||q.m5>8)return {ok:false,reason:'Movimiento de 5 minutos fuera de rango'};
-if(q.h1<3||q.h1>25)return {ok:false,reason:'Movimiento de 1 hora fuera de rango'};
-if(q.h24< -20||q.h24>80)return {ok:false,reason:'Movimiento diario fuera de rango'};
-if(q.buys+q.sells<20||q.sells<5)return {ok:false,reason:'Muy pocas operaciones o ventas'};
-if(q.buys<q.sells*1.4)return {ok:false,reason:'Presión compradora insuficiente'};
+if(rotation<.1||rotation>35)return {ok:false,reason:'Rotación volumen/liquidez fuera de rango'};
+if(q.m5< -4||q.m5>18)return {ok:false,reason:'Movimiento de 5 minutos fuera de rango'};
+if(q.h1< -15||q.h1>70)return {ok:false,reason:'Movimiento de 1 hora fuera de rango'};
+if(q.h24< -45||q.h24>200)return {ok:false,reason:'Movimiento diario fuera de rango'};
+if(q.buys+q.sells<8||q.sells<3)return {ok:false,reason:'Muy pocas operaciones o ventas'};
+if(q.buys<q.sells*.9)return {ok:false,reason:'Presión compradora insuficiente'};
 return {ok:true,reason:'Actividad compatible con filtros; seguridad aún sin verificar'}
 }
 function signal(p){return inspectSignal(p).ok}
@@ -193,11 +196,11 @@ if(pair)byMint[token]=pair;
 return {mints:unique,byMint,sources:perFeed,failures:[...failures,...lookupFailures]}}
 
 function openTrade(mint,p,rate){
-if(data.open.some(t=>t.mint===mint)||data.open.length>=MAX_POSITIONS||(data.cooldowns[mint]&&Date.now()-data.cooldowns[mint]<6*3600000))return;
+if(data.open.some(t=>t.mint===mint)||data.open.length>=MAX_POSITIONS||(data.cooldowns[mint]&&Date.now()-data.cooldowns[mint]<COOLDOWN_MS))return;
 const usable=data.cash-RESERVE,eq=equity(),lossBudget=eq*RISK;
 const stake=Math.min(usable,eq*MAX_STAKE,lossBudget/(STOP+ROUND_COST*2+GAS*2/10));
 const price=num(p.priceUsd);
-if(!price||!Number.isFinite(stake)||stake<5)return;
+if(!price||!Number.isFinite(stake)||stake<MIN_STAKE)return;
 const qty=(stake-GAS)/(price*rate*(1+ROUND_COST));
 if(!Number.isFinite(qty)||qty<=0)return;
 data.cash-=stake;
@@ -235,7 +238,7 @@ const factor=price/pos.entryPrice;const hours=(now-pos.opened)/3600000;
 if(factor<=1-STOP)closeTrade(pos,price,rate,'STOP REFERENCIAL');
 else if(factor>=1+TAKE)closeTrade(pos,price,rate,'OBJETIVO');
 else if(pos.peak>=pos.entryPrice*(1+ARM)&&price<=pos.peak*(1-TRAIL))closeTrade(pos,price,rate,'TRAILING');
-else if(hours>=24)closeTrade(pos,price,rate,'TIEMPO');
+else if(hours>=MAX_HOLD_HOURS)closeTrade(pos,price,rate,'TIEMPO RÁPIDO');
 }
 maybeVirtualPayout();
 if(equity()<=data.dayStart*(1-DAILY)){data.haltDay=data.day;$('lastError').textContent='Caída diaria estimada ≥ 5%: nuevas entradas bloqueadas; salidas simuladas siguen vigilándose mientras la página permanezca visible.'}
@@ -245,7 +248,7 @@ if(data.open.length>=MAX_POSITIONS)break;
 const before=data.open.length;openTrade(item.mint,item.p,rate);if(data.open.length>before)opened++;
 }
 }
-data.lastCheck=now;lastReview=now;
+data.lastCheck=now;lastReview=now;recentScans.push(now);
 summary='Última revisión: '+n+' tokens cotizados, '+qualifying.length+' señales de mercado, '+opened+' nuevas posiciones virtuales. '+(priceGap?'Entradas bloqueadas por falta de cotización de una posición. ':'')+date(now)+'. Las señales no equivalen a verificación de seguridad.';
 persist();
 }catch(e){summary='Revisión fallida; los datos no están actualizados.';diagnostics='<p class="red">Consulta fallida: '+esc(e.message)+'. No se intentaron nuevas compras simuladas.</p>';$('lastError').textContent='Revisión cancelada; sin nuevas operaciones: '+e.message+'. No se inventaron precios ni tipo de cambio.'}
@@ -257,7 +260,7 @@ $('add').onclick=()=>{const m=$('mint').value.trim();if(!isMint(m)){alert('Intro
 $('watchlist').onclick=e=>{const btn=e.target.closest('button[data-remove]');if(!btn)return;const i=Number(btn.dataset.remove);if(Number.isInteger(i)&&i>=0&&i<data.watch.length){data.watch.splice(i,1);persist();render()}};
 $('reset').onclick=()=>{if(!confirm('¿Borrar todas las posiciones, resultados, observación y retiros VIRTUALES?'))return;running=false;lastPrices={};data=initial();persist();render();$('lastError').textContent='Simulación reiniciada.'};
 $('export').onclick=()=>{const rows=[['fecha','evento','token','importe_mxn','pnl_neto_mxn'],...data.events.slice().reverse().map(e=>[new Date(e.t).toISOString(),e.type,e.symbol||'',e.amount||0,e.pnl??''])];const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');const url=URL.createObjectURL(new Blob(['\ufeff',csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='solana-simulacion.csv';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)};
-setInterval(()=>{if(running&&!document.hidden)tick()},60000);
+setInterval(()=>{if(running&&!document.hidden)tick()},POLL_MS);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&running)tick()});
 render();
 </script></body></html>
