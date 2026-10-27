@@ -97,15 +97,48 @@ $('source').textContent='USD/MXN: '+rate.toFixed(4)+' (referencia bancaria '+day
 return fx}
 function pairsFor(token,all){const valid=all.filter(p=>p.chainId==='solana'&&p.baseToken?.address===token&&num(p.priceUsd)>0&&num(p.liquidity?.usd)>0);
 valid.sort((a,b)=>(num(b.liquidity?.usd)||0)-(num(a.liquidity?.usd)||0));return valid[0]||null}
-function signal(p){
+function inspectSignal(p){
+if(!p)return {ok:false,reason:'Sin par de mercado o sin precio'};
 const q={liquidity:num(p.liquidity?.usd),vol24:num(p.volume?.h24),vol5:num(p.volume?.m5),m5:num(p.priceChange?.m5),h1:num(p.priceChange?.h1),h24:num(p.priceChange?.h24),buys:num(p.txns?.m5?.buys),sells:num(p.txns?.m5?.sells),age:num(p.pairCreatedAt)};
-if(Object.values(q).some(v=>v===null))return false;
+if(Object.values(q).some(v=>v===null))return {ok:false,reason:'Datos insuficientes del par'};
 const ageH=(Date.now()-q.age)/3600000;
-if(ageH<6||ageH>720||q.liquidity<50000||q.vol5<1500||q.vol24<10000)return false;
-if(q.vol24/q.liquidity<.2||q.vol24/q.liquidity>20)return false;
-if(q.m5<.5||q.m5>8||q.h1<3||q.h1>25||q.h24< -20||q.h24>80)return false;
-if(q.buys+q.sells<20||q.sells<5||q.buys<q.sells*1.4)return false;
-return true}
+if(ageH<6)return {ok:false,reason:'Par demasiado nuevo (< 6 h)'};
+if(ageH>720)return {ok:false,reason:'Par con más de 30 días'};
+if(q.liquidity<50000)return {ok:false,reason:'Liquidez inferior a USD 50,000'};
+if(q.vol5<1500)return {ok:false,reason:'Volumen en 5 min insuficiente'};
+if(q.vol24<10000)return {ok:false,reason:'Volumen diario insuficiente'};
+const rotation=q.vol24/q.liquidity;
+if(rotation<.2||rotation>20)return {ok:false,reason:'Rotación volumen/liquidez fuera de rango'};
+if(q.m5<.5||q.m5>8)return {ok:false,reason:'Movimiento de 5 minutos fuera de rango'};
+if(q.h1<3||q.h1>25)return {ok:false,reason:'Movimiento de 1 hora fuera de rango'};
+if(q.h24< -20||q.h24>80)return {ok:false,reason:'Movimiento diario fuera de rango'};
+if(q.buys+q.sells<20||q.sells<5)return {ok:false,reason:'Muy pocas operaciones o ventas'};
+if(q.buys<q.sells*1.4)return {ok:false,reason:'Presión compradora insuficiente'};
+return {ok:true,reason:'Actividad compatible con filtros; seguridad aún sin verificar'}
+}
+function signal(p){return inspectSignal(p).ok}
+function reportMarket(m){
+const reasons={},rejected=[],qualifying=[];
+for(const mint of m.mints){
+const p=m.byMint[mint],result=inspectSignal(p);
+if(result.ok)qualifying.push({mint,p});
+else{
+reasons[result.reason]=(reasons[result.reason]||0)+1;
+if(p&&rejected.length<5)rejected.push({symbol:String(p.baseToken?.symbol||'?').slice(0,28),reason:result.reason});
+}
+}
+qualifying.sort((a,b)=>(num(b.p.liquidity?.usd)||0)-(num(a.p.liquidity?.usd)||0));
+const counts=Object.entries(reasons).sort((a,b)=>b[1]-a[1]).slice(0,8);
+const feed=m.sources.map(f=>esc(f.label)+': <b>'+f.n+'</b>'+(f.error?' (no disponible)':'')).join(' · ');
+diagnostics='<p><b>Explorados:</b> '+m.mints.length+' direcciones · '+Object.keys(m.byMint).length+' con par válido · <b>'+qualifying.length+' que pasan filtros de mercado</b> (no implica seguridad on-chain).</p>'+
+'<p><b>Fuentes:</b> '+feed+'</p>'+
+'<p><b>Principales motivos de descarte:</b> '+(counts.length?counts.map(([why,n])=>'<span style="display:inline-block;margin:3px 6px 3px 0;padding:5px 8px;border-radius:7px;background:#151820">'+esc(why)+': <b>'+n+'</b></span>').join(''):'Ninguno')+'</p>'+
+(rejected.length?'<p><b>Ejemplos descartados:</b> '+rejected.map(x=>esc(x.symbol)+' ('+esc(x.reason)+')').join(' · ')+'</p>':'')+
+(m.failures.length?'<p class="amber"><b>Fuentes parcialmente inaccesibles:</b> '+m.failures.map(esc).join(' · ')+'</p>':'')+
+'<p class="amber">Las listas destacadas pueden incluir promoción pagada. Pasar estos filtros no equivale a una auditoría, ni acredita que un token pueda venderse.</p>';
+return qualifying
+}
+
 async function market(){
 const feedSpecs=[
 {label:'Perfiles recientes',url:'https://api.dexscreener.com/token-profiles/latest/v1'},
@@ -174,7 +207,7 @@ async function tick(){
 if(busy||document.hidden)return;busy=true;$('lastError').textContent='';render();
 try{
 const rate=(await getFx()).rate;refreshDay();
-const m=await market(),now=Date.now(),prices={};let n=0,candidates=0,opened=0,priceGap=false;
+const m=await market(),now=Date.now(),prices={};let n=0,opened=0,priceGap=false;const qualifying=reportMarket(m);
 for(const [mint,p] of Object.entries(m.byMint)){const price=num(p.priceUsd);if(price>0){prices[mint]={price,pair:p.pairAddress,at:now};n++}}
 lastPrices=prices;
 for(const pos of [...data.open]){
@@ -190,16 +223,15 @@ else if(hours>=24)closeTrade(pos,price,rate,'TIEMPO');
 maybeVirtualPayout();
 if(equity()<=data.dayStart*(1-DAILY)){data.haltDay=data.day;$('lastError').textContent='Caída diaria estimada ≥ 5%: nuevas entradas bloqueadas; salidas simuladas siguen vigilándose mientras la página permanezca visible.'}
 if(running&&data.haltDay!==data.day&&!priceGap){
-for(const mint of m.mints){
+for(const item of qualifying){
 if(data.open.length>=MAX_POSITIONS)break;
-const p=m.byMint[mint];
-if(p&&signal(p)){candidates++;const before=data.open.length;openTrade(mint,p,rate);if(data.open.length>before)opened++;}
+const before=data.open.length;openTrade(item.mint,item.p,rate);if(data.open.length>before)opened++;
 }
 }
 data.lastCheck=now;lastReview=now;
-summary='Última revisión: '+n+' tokens cotizados, '+candidates+' señales de mercado, '+opened+' nuevas posiciones virtuales. '+(priceGap?'Entradas bloqueadas por falta de cotización de una posición. ':'')+date(now)+'. Las señales no equivalen a verificación de seguridad.';
+summary='Última revisión: '+n+' tokens cotizados, '+qualifying.length+' señales de mercado, '+opened+' nuevas posiciones virtuales. '+(priceGap?'Entradas bloqueadas por falta de cotización de una posición. ':'')+date(now)+'. Las señales no equivalen a verificación de seguridad.';
 persist();
-}catch(e){summary='Revisión fallida; los datos no están actualizados.';$('lastError').textContent='Revisión cancelada; sin nuevas operaciones: '+e.message+'. No se inventaron precios ni tipo de cambio.'}
+}catch(e){summary='Revisión fallida; los datos no están actualizados.';diagnostics='<p class="red">Consulta fallida: '+esc(e.message)+'. No se intentaron nuevas compras simuladas.</p>';$('lastError').textContent='Revisión cancelada; sin nuevas operaciones: '+e.message+'. No se inventaron precios ni tipo de cambio.'}
 finally{busy=false;render()}}
 $('start').onclick=()=>{running=true;render();tick()};
 $('stop').onclick=()=>{running=false;render()};
