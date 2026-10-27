@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Solana Bot · Rastreo activo V6</title>
+<title>Solana Bot · Scalping simulado V7</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}
 body{background:#101116;color:#f5f5f5;font:15px/1.48 system-ui,-apple-system,sans-serif;max-width:840px;margin:auto;padding:22px}
@@ -16,22 +16,27 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 @media(max-width:500px){body{padding:14px}.card{padding:17px}.metrics{gap:8px}.metric{padding:11px}.metric b{font-size:19px}table{font-size:12px}th,td{padding:8px 4px}}
 </style></head><body>
 <p><a href="./index.html">← Wallet</a> · <a href="./radar.html">Radar</a> · <a href="./auditoria.html">Auditoría</a></p>
-<h1>Motor automático · Rastreo activo V6</h1>
+<h1>Motor automático · Scalping V7</h1>
+<p class="amber"><b>META ASPIRACIONAL: +$10 MXN NETOS POR MINUTO, partiendo de $100 MXN.</b> Es un objetivo extraordinariamente arriesgado (10% del capital inicial cada minuto), no un ingreso previsto ni garantizado. El sistema no inventará ganancias ni abrirá posiciones sin una señal.</p>
 <p class="amber"><b>OBJETIVO: CRECIMIENTO NETO. META: $100 → $200 MXN y siguientes duplicaciones.</b> No es una promesa de ganancias: pueden producirse pérdidas importantes.</p>
 <p class="amber"><b>MODO DEMOSTRACIÓN. No usa SOL, no opera en tu wallet y no realiza retiros.</b> Solo utiliza precios públicos de mercado. Las salidas son hipotéticas: un token real podría impedir vender o ejecutarse mucho peor.</p>
 <div class="card"><h2>Control de simulación</h2>
 <button id="start">Iniciar simulación automática</button><button id="stop" class="secondary">Detener</button><button id="once" class="secondary">Ejecutar revisión ahora</button>
 <p id="state" class="muted">Detenida. Los datos guardados solo están en este navegador.</p>
 <p class="note">Cuando está activa, consulta aproximadamente cada <b>15 segundos (4 revisiones por minuto)</b> solo con esta página abierta y visible. Puede abrir varias posiciones virtuales, pero solo cuando sus filtros se cumplen en dos revisiones consecutivas. No opera por obligación. Al cerrarla deja de trabajar. No es un bot de ejecución permanente.</p>
-<p id="source" class="note">Tipo de cambio USD/MXN: pendiente de consulta.</p><p id="scan-summary" class="note">Sin evaluación de mercado.</p><p id="pace" class="note">Revisiones y operaciones recientes: 0.</p><p class="note" id="sources-status">Buscando fuentes de mercado…</p><div id="diagnostics" class="note">Pulsa «Iniciar simulación automática» para consultar el mercado.</div><div id="candidates" class="note" style="overflow-x:auto"></div>
+<p id="source" class="note">Tipo de cambio USD/MXN: pendiente de consulta.</p><p id="scan-summary" class="note">Sin evaluación de mercado.</p><p id="pace" class="note">Revisiones y operaciones recientes: 0.</p><p class="note">Scalping: busca movimientos cortos cada 15 segundos; solo considera compra si el precio consultado cambió entre revisiones. DexScreener no proporciona cotizaciones ejecutables ni garantiza una actualización cada 15 segundos.</p><p class="note" id="sources-status">Buscando fuentes de mercado…</p><div id="diagnostics" class="note">Pulsa «Iniciar simulación automática» para consultar el mercado.</div><div id="candidates" class="note" style="overflow-x:auto"></div>
 </div>
 <div class="metrics" aria-label="Resultados simulados">
 <div class="metric"><span>Capital inicial</span><b>$100.00</b><span>MXN simulados</span></div>
+<div class="metric"><span>Meta neta por minuto</span><b>+$10.00</b><span>MXN simulados; no garantizada</span></div>
+<div class="metric"><span>Resultado neto acumulado</span>
 <div class="metric"><span>Patrimonio estimado</span><b id="equity">$100.00</b><span>MXN; incluye posiciones estimadas</span></div>
 <div class="metric"><span>Disponible</span><b id="cash">$100.00</b><span>MXN de caja simulada</span></div>
 <div class="metric"><span>Resultado neto acumulado</span><b id="pnl">$0.00</b><span>MXN; incluye retiros simulados</span></div>
 <div class="metric"><span>Reserva protegida</span><b>$30.00</b><span>No se utiliza para abrir posiciones</span></div>
 <div class="metric"><span>Posiciones abiertas</span><b id="positions">0 / 10</b><span>Máximo simultáneo</span></div>
+<div class="metric"><span>Ganancia/pérdida realizada últimos 60 s</span><b id="minutePnl">$0.00</b><span id="minuteStatus">Meta +$10/min no alcanzada</span></div>
+<div class="metric"><span>Ganancia/pérdida realizada últimos 10 min</span><b id="tenPnl">$0.00</b><span>MXN simulados, netos de costos estimados</span></div>
 <div class="metric"><span>Retiros virtuales a Bitso</span><b id="payouts">$0.00</b><span>Sin transferencias reales</span></div>
 <div class="metric"><span>Última revisión</span><b id="updated">—</b><span>Solo precio de referencia, no cotización</span></div>
 <div class="metric"><span>Siguiente meta virtual</span><b id="goal">$200.00</b><span>MXN, sin garantía</span></div>
@@ -45,9 +50,9 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <p><b>Hasta 10 posiciones abiertas</b>, sin obligación de ocuparlas. Reserva virtual <b>$30 MXN</b>, posición de hasta <b>8.5% del patrimonio al inicio</b> (el porcentaje disminuye conforme crece el capital, para permitir más posiciones), y riesgo objetivo <b>1.5% del patrimonio por entrada</b> suponiendo que se pueda ejecutar un stop; las pérdidas reales pueden superar ese límite.</p>
 <p><b>Antes de entrar:</b> liquidez suficiente, presión de compras, tendencia moderadamente positiva y dos revisiones consecutivas favorables. Se revisa el mercado aproximadamente cada 15 segundos mientras la página esté visible. No se fuerza una operación.</p>
 <p><b>Salidas por deterioro:</b> también cierra virtualmente si la liquidez cae de forma acusada, predominan las ventas o se detecta una caída extrema en 5 minutos. Estas son alertas de mercado, NO una auditoría de seguridad on-chain; puede cerrar tarde y con pérdidas.</p>
-<p><b>Salidas hipotéticas:</b> stop por caída del precio del 9%; objetivo de <b>+25% de beneficio neto estimado</b>; seguimiento de ganadoras después de alcanzar +14% neto; y límite de mantenimiento de <b>6 horas</b>. Ya no se venden posiciones automáticamente a los 2 minutos.</p>
+<p><b>Salidas hipotéticas del modo scalping:</b> stop por caída del precio del 7%; toma de beneficio desde <b>+3% NETO estimado</b> si el impulso se debilita y cierre prioritario en <b>+6% neto</b>; seguimiento de ganadoras desde +4% neto; y límite de mantenimiento de <b>90 minutos</b>. Ningún stop ni salida está garantizado. Ya no se venden posiciones automáticamente a los 2 minutos.</p>
 <p><b>Costos estimados:</b> 2.2% del valor más $0.05 MXN por cada compra o venta. No son cotizaciones ejecutables. Con posiciones pequeñas, el punto de equilibrio exige una subida considerable. Las ganancias que queden en la caja virtual se reinvierten automáticamente.</p>
-<p><b>Protecciones:</b> reserva intocable para nuevas entradas, máximo 4.5% del patrimonio de riesgo agregado estimado si se ejecutaran todos los stops a sus precios objetivo, pausa de nuevas entradas con caída estimada del 5% diario y 15 minutos antes de recomprar un token vendido. Los gaps de precio pueden superar todos estos límites.</p>
+<p><b>Protecciones:</b> reserva intocable para nuevas entradas, máximo 4.5% del patrimonio de riesgo agregado estimado si se ejecutaran todos los stops a sus precios objetivo, pausa de nuevas entradas con caída estimada del 5% diario y 90 segundos antes de recomprar un token vendido. Los gaps de precio pueden superar todos estos límites.</p>
 <p>Al acumular al menos <b>$1,000 MXN de ganancias netas realizadas no retiradas</b>, y si la caja lo permite, registra un <b>retiro exclusivamente virtual</b> a Bitso. No mueve tokens ni dinero real.</p>
 </div>
 <div class="card"><h2>Direcciones adicionales para observar</h2><p class="muted">El motor también analiza hasta 75 perfiles de Solana procedentes de tres fuentes públicas de DexScreener (perfiles recientes, boosts recientes y boosts destacados). Estas listas no son una muestra imparcial: algunos tokens han pagado para aparecer destacados. Si quieres seguir un token específico, añade su mint público.</p>
@@ -63,11 +68,11 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
-const KEY='solana-paper-active-v6-20261027';
-const START=100,RESERVE=30,MAX_POSITIONS=10,MAX_STAKE=.085,RISK=.015,MAX_TOTAL_STOP_RISK=.045,STOP=.09,TAKE=.25,TRAIL=.08,ARM=.14,DAILY=.05;
-const POLL_MS=15000,COOLDOWN_MS=15*60000,MAX_HOLD_HOURS=6,MIN_STAKE=5,MAX_NEW_PER_SCAN=3;
+const KEY='solana-paper-scalp-v7-20261027';
+const START=100,RESERVE=30,MAX_POSITIONS=10,MAX_STAKE=.085,RISK=.015,MAX_TOTAL_STOP_RISK=.045,STOP=.07,TAKE=.06,TRAIL=.035,ARM=.04,DAILY=.05,MINUTE_GOAL=10;
+const POLL_MS=15000,COOLDOWN_MS=90*1000,MAX_HOLD_HOURS=1.5,MIN_STAKE=5,MAX_NEW_PER_SCAN=4;
 const ROUND_COST=.022,GAS=.05,MAX_AGE_MS=7*86400000;
-let running=false,busy=false,fx=null,lastPrices={},lastReview=0,summary='Sin evaluación de mercado.',diagnostics='Todavía no se ha realizado una consulta.',recentScans=[],confirmations=new Map(),discoveryCache=null,discoveryAt=0,topCandidates=[];
+let running=false,busy=false,fx=null,lastPrices={},lastReview=0,summary='Sin evaluación de mercado.',diagnostics='Todavía no se ha realizado una consulta.',recentScans=[],confirmations=new Map(),observedPrices=new Map(),discoveryCache=null,discoveryAt=0,topCandidates=[];
 const money=n=>Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=v=>v===null||v===undefined||v===''?null:(Number.isFinite(Number(v))?Number(v):null);
