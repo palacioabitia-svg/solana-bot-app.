@@ -44,6 +44,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <p><b>Objetivo por etapas:</b> $100 → $200 → $400 → $800 MXN. No existe garantía de alcanzar ninguna meta. El patrimonio virtual varía con las posiciones y las comisiones.</p>
 <p><b>Hasta 10 posiciones abiertas</b>, sin obligación de ocuparlas. Reserva virtual <b>$30 MXN</b>, posición de hasta <b>8.5% del patrimonio al inicio</b> (el porcentaje disminuye conforme crece el capital, para permitir más posiciones), y riesgo objetivo <b>1.5% del patrimonio por entrada</b> suponiendo que se pueda ejecutar un stop; las pérdidas reales pueden superar ese límite.</p>
 <p><b>Antes de entrar:</b> liquidez suficiente, presión de compras, tendencia moderadamente positiva y dos revisiones consecutivas favorables. Se revisa el mercado aproximadamente cada 15 segundos mientras la página esté visible. No se fuerza una operación.</p>
+<p><b>Salidas por deterioro:</b> también cierra virtualmente si la liquidez cae de forma acusada, predominan las ventas o se detecta una caída extrema en 5 minutos. Estas son alertas de mercado, NO una auditoría de seguridad on-chain; puede cerrar tarde y con pérdidas.</p>
 <p><b>Salidas hipotéticas:</b> stop por caída del precio del 9%; objetivo de <b>+25% de beneficio neto estimado</b>; seguimiento de ganadoras después de alcanzar +14% neto; y límite de mantenimiento de <b>6 horas</b>. Ya no se venden posiciones automáticamente a los 2 minutos.</p>
 <p><b>Costos estimados:</b> 2.2% del valor más $0.05 MXN por cada compra o venta. No son cotizaciones ejecutables. Con posiciones pequeñas, el punto de equilibrio exige una subida considerable. Las ganancias que queden en la caja virtual se reinvierten automáticamente.</p>
 <p><b>Protecciones:</b> reserva intocable para nuevas entradas, máximo 4.5% del patrimonio de riesgo agregado estimado si se ejecutaran todos los stops a sus precios objetivo, pausa de nuevas entradas con caída estimada del 5% diario y 15 minutos antes de recomprar un token vendido. Los gaps de precio pueden superar todos estos límites.</p>
@@ -257,7 +258,7 @@ if(!price||!Number.isFinite(stake)||stake<MIN_STAKE||!p.pairAddress||!Number.isF
 const qty=(stake-GAS)/(price*rate*(1+ROUND_COST));
 if(!Number.isFinite(qty)||qty<=0||data.cash-stake<RESERVE-.000001)return false;
 data.cash-=stake;
-data.open.push({mint,pair:p.pairAddress,symbol:String(p.baseToken?.symbol||'?').slice(0,30),opened:Date.now(),cost:stake,qty,entryPrice:price,entryFx:rate,peak:price});
+data.open.push({mint,pair:p.pairAddress,symbol:String(p.baseToken?.symbol||'?').slice(0,30),opened:Date.now(),cost:stake,qty,entryPrice:price,entryFx:rate,entryLiquidity:num(p.liquidity?.usd),peak:price});
 confirmations.delete(mint);
 record({t:Date.now(),type:'COMPRA SIMULADA',symbol:p.baseToken?.symbol,amount:stake});
 return true
@@ -296,7 +297,13 @@ const factor=price/pos.entryPrice,net=(exitValue(pos.qty,price,rate)-pos.cost)/p
 const peakNet=(exitValue(pos.qty,pos.peak,rate)-pos.cost)/pos.cost;
 const hours=(now-pos.opened)/3600000;
 const buys=num(p.txns?.m5?.buys),sells=num(p.txns?.m5?.sells),fiveMin=num(p.priceChange?.m5);
+const liq=num(p.liquidity?.usd),oldLiq=num(pos.entryLiquidity);
+const liquidityWarning=liq!==null&&((oldLiq!==null&&oldLiq>0&&liq<oldLiq*.6)||liq<12000);
+const sellPressure=buys!==null&&sells!==null&&sells>=5&&((sells>Math.max(1,buys)*1.9&&fiveMin!==null&&fiveMin< -1)||(sells>Math.max(1,buys)*1.35&&fiveMin!==null&&fiveMin< -5));
+const marketReversal=fiveMin!==null&&fiveMin<=-9;
 if(factor<=1-STOP)closeTrade(pos,price,rate,'LÍMITE DE PÉRDIDA REFERENCIAL');
+else if(liquidityWarning)closeTrade(pos,price,rate,'RIESGO · CAÍDA DE LIQUIDEZ');
+else if(sellPressure||marketReversal)closeTrade(pos,price,rate,'RIESGO · DETERIORO DE MERCADO');
 else if(net>=TAKE)closeTrade(pos,price,rate,'META DE BENEFICIO NETO');
 else if(peakNet>=ARM&&price<=pos.peak*(1-TRAIL))closeTrade(pos,price,rate,'SEGUIMIENTO DE GANANCIA');
 else if(net>=.08&&((fiveMin!==null&&fiveMin<0)||(buys!==null&&sells!==null&&sells>buys*1.4)))closeTrade(pos,price,rate,'GANANCIA NETA · REVISIÓN DE TENDENCIA');
