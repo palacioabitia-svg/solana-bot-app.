@@ -50,7 +50,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <div class="card">
 <h2>Diagnóstico: ¿por qué no hubo ganancias?</h2>
 <p id="profitDiagnosis" class="note">Se calcula a partir de las operaciones y escaneos registrados en este navegador. No tenemos acceso a las operaciones de Phantom desde GitHub.</p>
-<p id="feeReality" class="amber">Estimación del costo de una operación de tamaño pequeño: pendiente.</p>
+<p id="feeReality" class="amber">Estimación del costo de una operación de tamaño pequeño: pendiente.</p><p id="minuteFeasibility" class="note">Viabilidad de la meta +$10/min: pendiente de cálculo.</p>
 <p id="profitStatistics" class="note"></p>
 <button id="exportDiagnosis" class="secondary">Exportar diagnóstico de la última hora (CSV)</button>
 <p class="note">Incluye decisiones por revisión, errores de datos y ventas virtuales. No prueba que las compras o ventas hubieran sido posibles en la cadena; no equivale a un backtest histórico.</p>
@@ -124,6 +124,10 @@ function hourReport(){
  const key=Object.entries(blockers).sort((a,b)=>b[1]-a[1]).slice(0,4);
  return {valid:valid.length,errors:errors.length,buy:buys.length,sell:sales.length,pnl:profit,wins:sales.filter(x=>x.pnl>0).length,losers:sales.filter(x=>x.pnl<=0).length,noSignals,noEntries,signals,blockers:key,scans}
 }
+function minuteTargetMath(stake,positions){
+ if(!Number.isFinite(stake)||stake<=positions*GAS||positions<=0)return null;
+ return ( ((stake+MINUTE_GOAL+positions*GAS)*(1+ROUND_COST))/((stake-positions*GAS)*(1-ROUND_COST))-1)*100;
+}
 function feeSummary(){
  const stake=data.open[0]?.cost||Math.min(7,START*.085);
  const r=economicMetrics(stake);
@@ -142,6 +146,12 @@ $('hourNet').textContent=signedMoney(hr.pnl);
 const econ=economicMetrics(data.open[0]?.cost||7);
 $('breakEven').textContent=econ?econ.breakeven.toFixed(1)+'%':'—';
 $('feeReality').textContent=feeSummary();
+const invested=data.open.reduce((n,p)=>n+p.cost,0);
+const count=data.open.length;
+const exampleStake=invested>0?invested:Math.min(4*7,Math.max(0,data.cash-RESERVE));
+const exampleN=invested>0?count:4;
+const required=minuteTargetMath(exampleStake,exampleN);
+$('minuteFeasibility').textContent=required===null?'No hay posiciones suficientes para calcular una meta factible.':'Para ganar $10 NETOS con '+exampleN+' posiciones que suman $'+money(exampleStake)+' MXN, todas tendrían que subir alrededor de '+required.toFixed(1)+'% antes de venderse (suponiendo el mismo movimiento, ejecución perfecta y tipo de cambio estable). '+(invested>0?'Cálculo sobre las posiciones actuales.':'Ejemplo con 4 posiciones de ~$7, no una previsión de operaciones.')
 $('profitStatistics').textContent='Esta hora: '+hr.valid+' escaneos válidos; '+hr.errors+' errores; '+hr.signals+' señales; '+hr.noSignals+' revisiones sin señales; '+hr.buy+' compras y '+hr.sell+' ventas. Ganadoras: '+hr.wins+'; no ganadoras: '+hr.losers+'.';
 $('profitDiagnosis').textContent=hr.valid===0&&hr.errors===0?'No hay escaneos registrados en esta hora en este navegador: aún no se puede medir si la estrategia está funcionando.':hr.valid===0?'Las consultas fallaron: la estrategia no dispone de precios confiables.':hr.buy===0?'Se consultaron '+hr.valid+' veces los datos, pero ninguna señal se convirtió en una compra. Principales bloqueos: '+(hr.blockers.map(([name,n])=>name+' ('+n+')').join('; ')||'sin detalles')+'.':hr.sell===0?'Ya existen compras virtuales, pero no hubo ventas realizadas esta hora. No significa que existan ganancias cobradas.':'Resultado neto REALIZADO de la última hora: '+signedMoney(hr.pnl)+'. Se excluyen ganancias no vendidas; la estimación de posiciones abiertas figura en Patrimonio.';
 $('lastDecision').textContent='Última decisión: '+lastDecision;
