@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Solana Bot · Crecimiento V5</title>
+<title>Solana Bot · Rastreo activo V6</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}
 body{background:#101116;color:#f5f5f5;font:15px/1.48 system-ui,-apple-system,sans-serif;max-width:840px;margin:auto;padding:22px}
@@ -16,14 +16,14 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 @media(max-width:500px){body{padding:14px}.card{padding:17px}.metrics{gap:8px}.metric{padding:11px}.metric b{font-size:19px}table{font-size:12px}th,td{padding:8px 4px}}
 </style></head><body>
 <p><a href="./index.html">← Wallet</a> · <a href="./radar.html">Radar</a> · <a href="./auditoria.html">Auditoría</a></p>
-<h1>Motor automático · Crecimiento V5</h1>
+<h1>Motor automático · Rastreo activo V6</h1>
 <p class="amber"><b>OBJETIVO: CRECIMIENTO NETO. META: $100 → $200 MXN y siguientes duplicaciones.</b> No es una promesa de ganancias: pueden producirse pérdidas importantes.</p>
 <p class="amber"><b>MODO DEMOSTRACIÓN. No usa SOL, no opera en tu wallet y no realiza retiros.</b> Solo utiliza precios públicos de mercado. Las salidas son hipotéticas: un token real podría impedir vender o ejecutarse mucho peor.</p>
 <div class="card"><h2>Control de simulación</h2>
 <button id="start">Iniciar simulación automática</button><button id="stop" class="secondary">Detener</button><button id="once" class="secondary">Ejecutar revisión ahora</button>
 <p id="state" class="muted">Detenida. Los datos guardados solo están en este navegador.</p>
 <p class="note">Cuando está activa, consulta aproximadamente cada <b>15 segundos (4 revisiones por minuto)</b> solo con esta página abierta y visible. Puede abrir varias posiciones virtuales, pero solo cuando sus filtros se cumplen en dos revisiones consecutivas. No opera por obligación. Al cerrarla deja de trabajar. No es un bot de ejecución permanente.</p>
-<p id="source" class="note">Tipo de cambio USD/MXN: pendiente de consulta.</p><p id="scan-summary" class="note">Sin evaluación de mercado.</p><p id="pace" class="note">Revisiones y operaciones recientes: 0.</p><div id="diagnostics" class="note">Pulsa «Iniciar simulación automática» para consultar el mercado.</div>
+<p id="source" class="note">Tipo de cambio USD/MXN: pendiente de consulta.</p><p id="scan-summary" class="note">Sin evaluación de mercado.</p><p id="pace" class="note">Revisiones y operaciones recientes: 0.</p><p class="note" id="sources-status">Buscando fuentes de mercado…</p><div id="diagnostics" class="note">Pulsa «Iniciar simulación automática» para consultar el mercado.</div><div id="candidates" class="note" style="overflow-x:auto"></div>
 </div>
 <div class="metrics" aria-label="Resultados simulados">
 <div class="metric"><span>Capital inicial</span><b>$100.00</b><span>MXN simulados</span></div>
@@ -56,17 +56,17 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <div class="card"><h2>Posiciones de prueba</h2><div id="open">Sin posiciones.</div></div>
 <div class="card"><h2>Historial de operaciones simuladas</h2><div id="history">Sin operaciones.</div>
 <button id="export" class="secondary">Exportar historial CSV</button><button id="reset" class="danger">Reiniciar simulación</button>
-<p class="note">El motor puede pasar mucho tiempo sin abrir una posición: no fuerza operaciones. Esta versión V5 mantiene un historial independiente de la estrategia V4 para empezar con $100 MXN virtuales sin mezclar sus pérdidas anteriores. El historial se guarda localmente en este navegador, no en GitHub ni en un servidor. Reiniciar borra el historial local tras confirmación. No equivale a un backtest histórico ni a una prueba de rentabilidad futura.</p>
+<p class="note">El motor puede pasar mucho tiempo sin abrir una posición: no fuerza operaciones. La V6 inicia una cuenta virtual independiente con $100 MXN para no mezclarla con pruebas anteriores. La actividad de las versiones previas permanece en su propio almacenamiento de navegador. El historial se guarda localmente en este navegador, no en GitHub ni en un servidor. Reiniciar borra el historial local tras confirmación. No equivale a un backtest histórico ni a una prueba de rentabilidad futura.</p>
 </div>
 <div class="card"><h2>Estado de seguridad</h2><p class="red"><b>Compras reales desactivadas.</b> No hay validación completa de holders, sellabilidad, liquidez bloqueada, historial del creador o extensiones de todos los tokens. No se autoriza operar fondos ni acceder a la wallet desde esta simulación.</p><p id="lastError" class="amber"></p></div>
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
-const KEY='solana-paper-growth-v5-20261027';
+const KEY='solana-paper-active-v6-20261027';
 const START=100,RESERVE=30,MAX_POSITIONS=10,MAX_STAKE=.085,RISK=.015,MAX_TOTAL_STOP_RISK=.045,STOP=.09,TAKE=.25,TRAIL=.08,ARM=.14,DAILY=.05;
 const POLL_MS=15000,COOLDOWN_MS=15*60000,MAX_HOLD_HOURS=6,MIN_STAKE=5,MAX_NEW_PER_SCAN=3;
 const ROUND_COST=.022,GAS=.05,MAX_AGE_MS=7*86400000;
-let running=false,busy=false,fx=null,lastPrices={},lastReview=0,summary='Sin evaluación de mercado.',diagnostics='Todavía no se ha realizado una consulta.',recentScans=[],confirmations=new Map();
+let running=false,busy=false,fx=null,lastPrices={},lastReview=0,summary='Sin evaluación de mercado.',diagnostics='Todavía no se ha realizado una consulta.',recentScans=[],confirmations=new Map(),discoveryCache=null,discoveryAt=0,topCandidates=[];
 const money=n=>Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=v=>v===null||v===undefined||v===''?null:(Number.isFinite(Number(v))?Number(v):null);
@@ -88,6 +88,7 @@ $('scan-summary').textContent=summary;
 const cutoff=Date.now()-60000;recentScans=recentScans.filter(t=>t>=cutoff);const minuteEvents=data.events.filter(e=>e.t>=cutoff&&/SIMULADA/.test(e.type));
 $('pace').innerHTML='<b>Últimos 60 s:</b> '+recentScans.length+' revisiones, '+minuteEvents.length+' operaciones virtuales (entradas y salidas). Son eventos simulados, no transacciones on-chain.';
 $('diagnostics').innerHTML=diagnostics;
+$('candidates').innerHTML=topCandidates.length?'<p><b>Tokens observados (reales, NO recomendados):</b></p><table><thead><tr><th>Token</th><th>Liquidez USD</th><th>Precio 5m</th><th>Compras / ventas 5m</th><th>Motivo</th></tr></thead><tbody>'+topCandidates.map(x=>'<tr><td>'+esc(x.symbol)+'</td><td>'+money(x.liq)+'</td><td>'+esc(x.m5===null?'ND':x.m5.toFixed(2)+'%')+'</td><td>'+esc(x.buys===null?'ND':x.buys)+' / '+esc(x.sells===null?'ND':x.sells)+'</td><td>'+esc(x.reason)+'</td></tr>').join('')+'</tbody></table>':'';
 const eq=equity();$('equity').textContent='$'+money(eq);$('cash').textContent='$'+money(data.cash);
 $('pnl').textContent=(realizedAndUnrealized()>=0?'+':'')+'$'+money(realizedAndUnrealized());
 $('positions').textContent=data.open.length+' / '+MAX_POSITIONS;$('payouts').textContent='$'+money(data.paid);
@@ -189,41 +190,58 @@ diagnostics='<p><b>Universo:</b> '+m.mints.length+' tokens examinados · '+Objec
 return qualifying
 }
 async function market(){
+const now=Date.now();
+if(!discoveryCache||now-discoveryAt>90000){
 const feedSpecs=[
-{label:'Perfiles recientes',url:'https://api.dexscreener.com/token-profiles/latest/v1'},
-{label:'Boosts destacados (promocionados)',url:'https://api.dexscreener.com/token-boosts/top/v1'},
-{label:'Boosts recientes (promocionados)',url:'https://api.dexscreener.com/token-boosts/latest/v1'}
+{label:'Perfiles recientes',url:'https://api.dexscreener.com/token-profiles/latest/v1',kind:'tokens'},
+{label:'Boosts destacados (publicidad pagada)',url:'https://api.dexscreener.com/token-boosts/top/v1',kind:'tokens'},
+{label:'Boosts recientes (publicidad pagada)',url:'https://api.dexscreener.com/token-boosts/latest/v1',kind:'tokens'},
+{label:'Community takeovers',url:'https://api.dexscreener.com/community-takeovers/latest/v1',kind:'tokens'},
+{label:'Anuncios (publicidad pagada)',url:'https://api.dexscreener.com/ads/latest/v1',kind:'tokens'},
+{label:'Búsqueda memecoin',url:'https://api.dexscreener.com/latest/dex/search?q=meme',kind:'pairs'},
+{label:'Búsqueda pump',url:'https://api.dexscreener.com/latest/dex/search?q=pump',kind:'pairs'},
+{label:'Búsqueda BONK',url:'https://api.dexscreener.com/latest/dex/search?q=bonk',kind:'pairs'}
 ];
 const responses=await Promise.allSettled(feedSpecs.map(f=>json(f.url)));
-const perFeed=[],failures=[],lists=[];
+const sources=[],addresses=[],failures=[];
 for(let i=0;i<responses.length;i++){
-const r=responses[i],label=feedSpecs[i].label;
-if(r.status==='fulfilled'&&Array.isArray(r.value)){
-const addresses=[...new Set(r.value.filter(p=>p.chainId==='solana'&&isMint(p.tokenAddress)).map(p=>p.tokenAddress))].slice(0,25);
-lists.push(addresses);perFeed.push({label,n:addresses.length});
-}else{
-failures.push(label+': '+(r.status==='rejected'?r.reason.message:'Respuesta inválida'));
-perFeed.push({label,n:0,error:true});
-}}
-const unique=[...new Set([...data.open.map(p=>p.mint),...data.watch,...lists.flat()])].slice(0,90);
-if(!unique.length)throw Error('Las fuentes no proporcionaron ningún token Solana: '+failures.join(' / '));
+const r=responses[i],spec=feedSpecs[i];
+if(r.status==='fulfilled'){
+const found=spec.kind==='pairs'?r.value?.pairs:r.value;
+if(Array.isArray(found)){
+const mints=[...new Set(found.filter(p=>p.chainId==='solana')
+.map(p=>spec.kind==='pairs'?p.baseToken?.address:p.tokenAddress).filter(isMint))].slice(0,30);
+addresses.push(...mints);sources.push({label:spec.label,n:mints.length});continue;
+}
+}
+const why=r.status==='rejected'?String(r.reason?.message||r.reason):'Respuesta inválida';
+failures.push(spec.label+': '+why);sources.push({label:spec.label,n:0,error:true});
+}
+if(!addresses.length&&!data.watch.length&&!data.open.length)throw Error('Ninguna fuente devolvió tokens Solana: '+failures.join(' | '));
+discoveryCache={addresses:[...new Set(addresses)],sources,failures};
+discoveryAt=now;
+}
+const unique=[...new Set([...data.open.map(p=>p.mint),...data.watch,...discoveryCache.addresses])].slice(0,145);
+if(!unique.length)throw Error('El universo de Solana está vacío');
 const chunks=[];for(let i=0;i<unique.length;i+=30)chunks.push(unique.slice(i,i+30));
 const attempts=await Promise.allSettled(chunks.map(chunk=>json('https://api.dexscreener.com/tokens/v1/solana/'+chunk.join(','))));
-const byMint={},all=[],lookupFailures=[];
+const all=[],lookupFailures=[];
 for(let i=0;i<attempts.length;i++){
 const attempt=attempts[i];
-if(attempt.status==='fulfilled'&&Array.isArray(attempt.value)){all.push(...attempt.value)}
-else lookupFailures.push('Lote '+(i+1)+': '+(attempt.status==='rejected'?attempt.reason.message:'Respuesta inválida'));
+if(attempt.status==='fulfilled'&&Array.isArray(attempt.value))all.push(...attempt.value);
+else lookupFailures.push('Consulta '+(i+1)+': '+(attempt.status==='rejected'?attempt.reason.message:'Respuesta inválida'));
 }
-if(!all.length)throw Error('DexScreener no devolvió cotizaciones: '+lookupFailures.join(' / '));
+if(!all.length)throw Error('No se pudieron obtener cotizaciones DexScreener: '+lookupFailures.join(' | '));
+const byMint={};
 for(const token of unique){
 const held=data.open.find(p=>p.mint===token);
 const exact=held?all.find(p=>p.chainId==='solana'&&p.baseToken?.address===token&&p.pairAddress===held.pair&&num(p.priceUsd)>0):null;
-const pair=exact||pairsFor(token,all);
-if(pair)byMint[token]=pair;
+const p=exact||pairsFor(token,all);
+if(p)byMint[token]=p;
 }
-return {mints:unique,byMint,sources:perFeed,failures:[...failures,...lookupFailures]}}
-
+$('sources-status').textContent='DexScreener: '+Object.keys(byMint).length+' pares con precios; '+discoveryCache.sources.length+' búsquedas en caché de 90 s.';
+return {mints:unique,byMint,sources:discoveryCache.sources,failures:[...discoveryCache.failures,...lookupFailures]}
+}
 function openTrade(mint,p,rate){
 if(data.open.some(t=>t.mint===mint)||data.open.length>=MAX_POSITIONS||(data.cooldowns[mint]&&Date.now()-data.cooldowns[mint]<COOLDOWN_MS))return false;
 const usable=data.cash-RESERVE,eq=equity(),slots=Math.max(1,MAX_POSITIONS-data.open.length),riskBudget=eq*RISK;
