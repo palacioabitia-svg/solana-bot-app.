@@ -22,7 +22,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <button id="start">Iniciar simulación automática</button><button id="stop" class="secondary">Detener</button><button id="once" class="secondary">Ejecutar revisión ahora</button>
 <p id="state" class="muted">Detenida. Los datos guardados solo están en este navegador.</p>
 <p class="note">Cuando está activa, consulta aproximadamente cada 60 segundos <b>solo con esta página abierta y visible</b>. Al cerrarla deja de trabajar. No es un bot de ejecución permanente.</p>
-<p id="source" class="note">Tipo de cambio USD/MXN: pendiente de consulta.</p>
+<p id="source" class="note">Tipo de cambio USD/MXN: pendiente de consulta.</p><p id="scan-summary" class="note">Sin evaluación de mercado.</p>
 </div>
 <div class="metrics" aria-label="Resultados simulados">
 <div class="metric"><span>Capital inicial</span><b>$100.00</b><span>MXN simulados</span></div>
@@ -57,7 +57,7 @@ const $=id=>document.getElementById(id);
 const KEY='solana-paper-v2-20261027';
 const START=100,RESERVE=30,MAX_POSITIONS=2,MAX_STAKE=.10,RISK=.02,STOP=.12,TAKE=.40,TRAIL=.15,ARM=.20,DAILY=.05;
 const ROUND_COST=.022,GAS=.05,MAX_AGE_MS=7*86400000;
-let running=false,busy=false,timer=null,fx=null,lastPrices={},lastReview=0;
+let running=false,busy=false,fx=null,lastPrices={},lastReview=0,summary='Sin evaluación de mercado.';
 const money=n=>Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=v=>v===null||v===undefined||v===''?null:(Number.isFinite(Number(v))?Number(v):null);
@@ -72,6 +72,7 @@ function realizedAndUnrealized(){return equity()+data.paid-START}
 function exitValue(qty,price,rate){return Math.max(0,qty*price*rate*(1-ROUND_COST)-GAS)}
 function record(event){data.events.unshift(event);data.events=data.events.slice(0,400)}
 function render(){
+$('scan-summary').textContent=summary;
 const eq=equity();$('equity').textContent='$'+money(eq);$('cash').textContent='$'+money(data.cash);
 $('pnl').textContent=(realizedAndUnrealized()>=0?'+':'')+'$'+money(realizedAndUnrealized());
 $('positions').textContent=data.open.length+' / '+MAX_POSITIONS;$('payouts').textContent='$'+money(data.paid);
@@ -135,7 +136,7 @@ function maybeVirtualPayout(){
 const claim=data.realizedNet-data.paid;
 const payable=Math.min(claim,data.cash-RESERVE);
 if(claim>=1000&&payable>=1000){
-data.cash-=payable;data.paid+=payable;
+data.cash-=payable;data.paid+=payable;data.dayStart-=payable;
 record({t:Date.now(),type:'RETIRO VIRTUAL BITSO',amount:payable,pnl:0});
 }}
 function refreshDay(){
@@ -146,7 +147,7 @@ async function tick(){
 if(busy||document.hidden)return;busy=true;$('lastError').textContent='';render();
 try{
 const rate=(await getFx()).rate;refreshDay();
-const m=await market(),now=Date.now(),prices={};let n=0;
+const m=await market(),now=Date.now(),prices={};let n=0,candidates=0,opened=0;
 for(const [mint,p] of Object.entries(m.byMint)){const price=num(p.priceUsd);if(price>0){prices[mint]={price,pair:p.pairAddress,at:now};n++}}
 lastPrices=prices;
 for(const pos of [...data.open]){
@@ -165,13 +166,13 @@ if(running||manualTick){
 for(const mint of m.mints){
 if(data.open.length>=MAX_POSITIONS)break;
 const p=m.byMint[mint];
-if(p&&signal(p))openTrade(mint,p,rate);
+if(p&&signal(p)){candidates++;const before=data.open.length;openTrade(mint,p,rate);if(data.open.length>before)opened++;}
 }
 }
 data.lastCheck=now;lastReview=now;
-$('state').textContent='Revisión completa: '+n+' tokens con pares válidos; '+date(now)+'.';
+summary='Última revisión: '+n+' tokens cotizados, '+candidates+' señales de mercado, '+opened+' nuevas posiciones virtuales. '+date(now)+'. Las señales no equivalen a verificación de seguridad.';
 persist();
-}catch(e){$('lastError').textContent='Revisión cancelada; sin nuevas operaciones: '+e.message+'. No se inventaron precios ni tipo de cambio.'}
+}catch(e){summary='Revisión fallida; los datos no están actualizados.';$('lastError').textContent='Revisión cancelada; sin nuevas operaciones: '+e.message+'. No se inventaron precios ni tipo de cambio.'}
 finally{busy=false;render()}}
 let manualTick=false;
 $('start').onclick=()=>{running=true;manualTick=false;render();tick()};
