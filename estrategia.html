@@ -113,7 +113,7 @@ const mints=[...new Set([...data.open.map(p=>p.mint),...data.watch,...latest])].
 if(!mints.length)return {mints:[],byMint:{}};
 const raw=await json('https://api.dexscreener.com/tokens/v1/solana/'+mints.join(','));
 if(!Array.isArray(raw))throw Error('Pares DexScreener incompletos');
-const byMint={};for(const token of mints){const p=pairsFor(token,raw);if(p)byMint[token]=p}
+const byMint={};for(const token of mints){const holding=data.open.find(p=>p.mint===token);const exact=holding?raw.find(p=>p.chainId==='solana'&&p.baseToken?.address===token&&p.pairAddress===holding.pair&&num(p.priceUsd)>0):null;const p=exact||pairsFor(token,raw);if(p)byMint[token]=p}
 return {mints,byMint}}
 function openTrade(mint,p,rate){
 if(data.open.some(t=>t.mint===mint)||data.open.length>=MAX_POSITIONS||(data.cooldowns[mint]&&Date.now()-data.cooldowns[mint]<6*3600000))return;
