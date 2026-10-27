@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Solana Bot · Simulación rápida V4</title>
+<title>Solana Bot · Crecimiento V5</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}
 body{background:#101116;color:#f5f5f5;font:15px/1.48 system-ui,-apple-system,sans-serif;max-width:840px;margin:auto;padding:22px}
@@ -16,7 +16,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 @media(max-width:500px){body{padding:14px}.card{padding:17px}.metrics{gap:8px}.metric{padding:11px}.metric b{font-size:19px}table{font-size:12px}th,td{padding:8px 4px}}
 </style></head><body>
 <p><a href="./index.html">← Wallet</a> · <a href="./radar.html">Radar</a> · <a href="./auditoria.html">Auditoría</a></p>
-<h1>Motor automático · Simulación rápida V4</h1>
+<h1>Motor automático · Crecimiento V5</h1>
 <p class="amber"><b>MODO DEMOSTRACIÓN. No usa SOL, no opera en tu wallet y no realiza retiros.</b> Solo utiliza precios públicos de mercado. Las salidas son hipotéticas: un token real podría impedir vender o ejecutarse mucho peor.</p>
 <div class="card"><h2>Control de simulación</h2>
 <button id="start">Iniciar simulación automática</button><button id="stop" class="secondary">Detener</button><button id="once" class="secondary">Ejecutar revisión ahora</button>
@@ -30,7 +30,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <div class="metric"><span>Disponible</span><b id="cash">$100.00</b><span>MXN de caja simulada</span></div>
 <div class="metric"><span>Resultado neto acumulado</span><b id="pnl">$0.00</b><span>MXN; incluye retiros simulados</span></div>
 <div class="metric"><span>Reserva protegida</span><b>$30.00</b><span>No se utiliza para abrir posiciones</span></div>
-<div class="metric"><span>Posiciones abiertas</span><b id="positions">0 / 8</b><span>Máximo simultáneo</span></div>
+<div class="metric"><span>Posiciones abiertas</span><b id="positions">0 / 10</b><span>Máximo simultáneo</span></div>
 <div class="metric"><span>Retiros virtuales a Bitso</span><b id="payouts">$0.00</b><span>Sin transferencias reales</span></div>
 <div class="metric"><span>Última revisión</span><b id="updated">—</b><span>Solo precio de referencia, no cotización</span></div>
 </div>
@@ -55,10 +55,10 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 'use strict';
 const $=id=>document.getElementById(id);
 const KEY='solana-paper-v2-20261027';
-const START=100,RESERVE=30,MAX_POSITIONS=8,MAX_STAKE=.08,RISK=.02,STOP=.08,TAKE=.18,TRAIL=.08,ARM=.10,DAILY=.05;
-const POLL_MS=15000,COOLDOWN_MS=45000,MAX_HOLD_HOURS=2/60,MIN_STAKE=3;
+const START=100,RESERVE=30,MAX_POSITIONS=10,MAX_STAKE=.085,RISK=.015,STOP=.09,TAKE=.25,TRAIL=.08,ARM=.14,DAILY=.05;
+const POLL_MS=15000,COOLDOWN_MS=15*60000,MAX_HOLD_HOURS=6,MIN_STAKE=5,MAX_NEW_PER_SCAN=3;
 const ROUND_COST=.022,GAS=.05,MAX_AGE_MS=7*86400000;
-let running=false,busy=false,fx=null,lastPrices={},lastReview=0,summary='Sin evaluación de mercado.',diagnostics='Todavía no se ha realizado una consulta.',recentScans=[];
+let running=false,busy=false,fx=null,lastPrices={},lastReview=0,summary='Sin evaluación de mercado.',diagnostics='Todavía no se ha realizado una consulta.',recentScans=[],confirmations=new Map();
 const money=n=>Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=v=>v===null||v===undefined||v===''?null:(Number.isFinite(Number(v))?Number(v):null);
