@@ -29,7 +29,6 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <div class="metrics" aria-label="Resultados simulados">
 <div class="metric"><span>Capital inicial</span><b>$100.00</b><span>MXN simulados</span></div>
 <div class="metric"><span>Meta neta por minuto</span><b>+$10.00</b><span>MXN simulados; no garantizada</span></div>
-<div class="metric"><span>Resultado neto acumulado</span>
 <div class="metric"><span>Patrimonio estimado</span><b id="equity">$100.00</b><span>MXN; incluye posiciones estimadas</span></div>
 <div class="metric"><span>Disponible</span><b id="cash">$100.00</b><span>MXN de caja simulada</span></div>
 <div class="metric"><span>Resultado neto acumulado</span><b id="pnl">$0.00</b><span>MXN; incluye retiros simulados</span></div>
@@ -92,6 +91,13 @@ function record(event){data.events.unshift(event);data.events=data.events.slice(
 function render(){
 $('scan-summary').textContent=summary;
 const cutoff=Date.now()-60000;recentScans=recentScans.filter(t=>t>=cutoff);const minuteEvents=data.events.filter(e=>e.t>=cutoff&&/SIMULADA/.test(e.type));
+const closedTrades=data.events.filter(e=>e.type.startsWith('VENTA SIMULADA')&&Number.isFinite(e.pnl));
+const minutePnl=closedTrades.filter(e=>e.t>=cutoff).reduce((n,e)=>n+e.pnl,0);
+const tenPnl=closedTrades.filter(e=>e.t>=Date.now()-600000).reduce((n,e)=>n+e.pnl,0);
+$('minutePnl').textContent=(minutePnl>=0?'+':'')+'$'+money(minutePnl);
+$('tenPnl').textContent=(tenPnl>=0?'+':'')+'$'+money(tenPnl);
+$('minuteStatus').textContent=minutePnl>=MINUTE_GOAL?'Meta simulada superada (últimos 60 s)':'Faltan $'+money(Math.max(0,MINUTE_GOAL-minutePnl))+' para meta +$10/min (últimos 60 s)';
+
 $('pace').innerHTML='<b>Últimos 60 s:</b> '+recentScans.length+' revisiones, '+minuteEvents.length+' operaciones virtuales (entradas y salidas). Son eventos simulados, no transacciones on-chain.';
 $('diagnostics').innerHTML=diagnostics;
 $('candidates').innerHTML=topCandidates.length?'<p><b>Tokens observados (reales, NO recomendados):</b></p><table><thead><tr><th>Token</th><th>Liquidez USD</th><th>Precio 5m</th><th>Compras / ventas 5m</th><th>Motivo</th></tr></thead><tbody>'+topCandidates.map(x=>'<tr><td>'+esc(x.symbol)+'</td><td>'+money(x.liq)+'</td><td>'+esc(x.m5===null?'ND':x.m5.toFixed(2)+'%')+'</td><td>'+esc(x.buys===null?'ND':x.buys)+' / '+esc(x.sells===null?'ND':x.sells)+'</td><td>'+esc(x.reason)+'</td></tr>').join('')+'</tbody></table>':'';
