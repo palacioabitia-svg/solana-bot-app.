@@ -353,21 +353,21 @@ return {mints:unique,byMint,sources:discoveryCache.sources,failures:[...discover
 }
 function openTrade(mint,p,rate){
 if(data.open.some(t=>t.mint===mint)||data.open.length>=MAX_POSITIONS||(data.cooldowns[mint]&&Date.now()-data.cooldowns[mint]<COOLDOWN_MS))return false;
-const usable=data.cash-RESERVE,eq=equity(),slots=Math.max(1,MAX_POSITIONS-data.open.length),riskBudget=eq*RISK;
-const remainingRisk=eq*MAX_TOTAL_STOP_RISK-riskExposure();
+const available=Math.max(0,data.cash),netWorth=equity(),remainingRisk=netWorth*MAX_TOTAL_STOP_RISK-riskExposure();
 const stopFactor=(1-STOP)*(1-ROUND_COST)/(1+ROUND_COST);
-const maxStakeRisk=(remainingRisk-GAS*(1+stopFactor))/(1-stopFactor);
-const diversifiedFraction=Math.max(.032,MAX_STAKE-Math.max(0,eq-START)*.00025);
-const stake=Math.min(usable/slots,eq*diversifiedFraction,riskBudget/(STOP+2*ROUND_COST+2*GAS/MIN_STAKE),maxStakeRisk);
+const remainingStake=(remainingRisk-GAS*(1+stopFactor))/(1-stopFactor);
+// Cada posición puede ocupar hasta 20% del patrimonio. No hay reserva obligatoria.
+// El tope de riesgo conjunto impide llenar posiciones si los stops podrían destruir la cuenta.
+const stake=Math.min(available,netWorth*MAX_STAKE,remainingStake);
 const price=num(p.priceUsd);
 if(!price||!Number.isFinite(stake)||stake<MIN_STAKE||!p.pairAddress||!Number.isFinite(rate)||rate<=0)return false;
 const qty=(stake-GAS)/(price*rate*(1+ROUND_COST));
-if(!Number.isFinite(qty)||qty<=0||data.cash-stake<RESERVE-.000001)return false;
-data.cash-=stake;
+if(!Number.isFinite(qty)||qty<=0||data.cash-stake<-.000001)return false;
+data.cash=Math.max(0,data.cash-stake);
 data.open.push({mint,pair:p.pairAddress,symbol:String(p.baseToken?.symbol||'?').slice(0,30),opened:Date.now(),cost:stake,qty,entryPrice:price,entryFx:rate,entryLiquidity:num(p.liquidity?.usd),peak:price});
 confirmations.delete(mint);
 record({t:Date.now(),type:'COMPRA SIMULADA',symbol:p.baseToken?.symbol,amount:stake});
-return true
+return true;
 }
 function closeTrade(p,price,rate,reason){
 const proceeds=exitValue(p.qty,price,rate);
@@ -407,13 +407,17 @@ const liq=num(p.liquidity?.usd),oldLiq=num(pos.entryLiquidity);
 const liquidityWarning=liq!==null&&((oldLiq!==null&&oldLiq>0&&liq<oldLiq*.6)||liq<12000);
 const sellPressure=buys!==null&&sells!==null&&sells>=5&&((sells>Math.max(1,buys)*1.9&&fiveMin!==null&&fiveMin< -1)||(sells>Math.max(1,buys)*1.35&&fiveMin!==null&&fiveMin< -5));
 const marketReversal=fiveMin!==null&&fiveMin<=-9;
+const netMxn=exitValue(pos.qty,price,rate)-pos.cost;
+const peakMxn=exitValue(pos.qty,pos.peak,rate)-pos.cost;
+const weakened=(fiveMin!==null&&fiveMin<=1)||(buys!==null&&sells!==null&&sells>buys*1.1);
 if(factor<=1-STOP){closeTrade(pos,price,rate,'STOP · PÉRDIDA REFERENCIAL');riskExit=true;}
 else if(liquidityWarning){closeTrade(pos,price,rate,'RIESGO · CAÍDA DE LIQUIDEZ');riskExit=true;}
 else if(sellPressure||marketReversal){closeTrade(pos,price,rate,'RIESGO · PRESIÓN VENDEDORA');riskExit=true;}
-else if(net>=TAKE)closeTrade(pos,price,rate,'SCALPING · BENEFICIO NETO OBJETIVO');
-else if(peakNet>=ARM&&price<=pos.peak*(1-TRAIL))closeTrade(pos,price,rate,'SCALPING · SEGUIMIENTO DE BENEFICIO');
-else if(net>=.03&&((fiveMin!==null&&fiveMin<.1)||(buys!==null&&sells!==null&&sells>buys*1.15)))closeTrade(pos,price,rate,'SCALPING · BENEFICIO ANTE DEBILIDAD');
-else if(hours>=MAX_HOLD_HOURS)closeTrade(pos,price,rate,'TIEMPO MÁXIMO 90 MIN');
+else if(netMxn>=NET_PROFIT_GOAL)closeTrade(pos,price,rate,'SCALPING · +$2 NETOS O MÁS');
+else if(netMxn>=NET_PROFIT_MIN&&weakened)closeTrade(pos,price,rate,'SCALPING · +$1 NETO Y PÉRDIDA DE IMPULSO');
+else if(peakMxn>=NET_PROFIT_MIN&&price<=pos.peak*(1-TRAIL))closeTrade(pos,price,rate,'SCALPING · TRAILING DE GANANCIA');
+else if(netMxn>=NET_PROFIT_MIN&&hours>=3/60)closeTrade(pos,price,rate,'SCALPING · +$1 NETO TRAS 3 MIN');
+else if(hours>=MAX_HOLD_HOURS)closeTrade(pos,price,rate,'TIEMPO MÁXIMO 30 MIN');
 }
 maybeVirtualPayout();
 if(equity()<=data.dayStart*(1-DAILY)){data.haltDay=data.day;$('lastError').textContent='Caída diaria estimada ≥ 5%: nuevas entradas bloqueadas; salidas simuladas siguen vigilándose mientras la página permanezca visible.'}
