@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"><meta http-equiv="Pragma" content="no-cache">
+<title>Solana Bot · Scalping V7 · página nueva</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}
+body{background:#101116;color:#f5f5f5;font:15px/1.48 system-ui,-apple-system,sans-serif;max-width:840px;margin:auto;padding:22px}
+a{color:#c5f27c}h1{font-size:28px;line-height:1.2}h2{font-size:19px;margin:0 0 15px}.muted{color:#b9bac5}.red{color:#ff9b9b}.green{color:#c5f27c}.amber{color:#ffd08d}
+.card{background:#23262e;border-radius:18px;margin:17px 0;padding:22px}.metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}.metric{background:#181b22;border-radius:12px;padding:16px}
+.metric b{font-size:22px;display:block;margin-top:4px;overflow-wrap:anywhere}.metric span{font-size:12px;color:#c4c5ca}
+button{background:#c5f27c;color:#152000;border:0;padding:13px 17px;border-radius:11px;font-weight:700;font-size:14px;margin:3px 6px 3px 0}
+button.secondary{background:#434753;color:white}button.danger{background:#653b3f;color:#fff}button:disabled{opacity:.4}
+input{background:#12151b;color:white;border:1px solid #777b86;border-radius:8px;padding:11px;font:inherit;max-width:100%}
+input[type=text]{width:100%;margin:8px 0}code{overflow-wrap:anywhere}
+table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;padding:10px 7px;border-bottom:1px solid #41444e;vertical-align:top}
+.note{font-size:13px;color:#c3c4cc}.tag{font-weight:700;color:#ffd08d}.mini{padding:0 7px}
+@media(max-width:500px){body{padding:14px}.card{padding:17px}.metrics{gap:8px}.metric{padding:11px}.metric b{font-size:19px}table{font-size:12px}th,td{padding:8px 4px}}
+</style></head><body>
+<p><a href="./index.html">← Wallet</a> · <a href="./radar.html">Radar</a> · <a href="./auditoria.html">Auditoría</a></p>
+<h1>Motor automático · Scalping V7</h1><p class="green"><b>VERSIÓN V7 · PÁGINA NUEVA</b> · 27 de octubre de 2026</p>
+<p class="amber"><b>META ASPIRACIONAL: +$10 MXN NETOS POR MINUTO, partiendo de $100 MXN.</b> Es un objetivo extraordinariamente arriesgado (10% del capital inicial cada minuto), no un ingreso previsto ni garantizado. El sistema no inventará ganancias ni abrirá posiciones sin una señal.</p>
+<p class="amber"><b>OBJETIVO: CRECIMIENTO NETO. META: $100 → $200 MXN y siguientes duplicaciones.</b> No es una promesa de ganancias: pueden producirse pérdidas importantes.</p>
+<p class="amber"><b>MODO DEMOSTRACIÓN. No usa SOL, no opera en tu wallet y no realiza retiros.</b> Solo utiliza precios públicos de mercado. Las salidas son hipotéticas: un token real podría impedir vender o ejecutarse mucho peor.</p>
+<div class="card"><h2>Control de simulación</h2>
+<button id="start">Iniciar simulación automática</button><button id="stop" class="secondary">Detener</button><button id="once" class="secondary">Ejecutar revisión ahora</button>
+<p id="state" class="muted">Detenida. Los datos guardados solo están en este navegador.</p>
+<p class="note">Cuando está activa, consulta aproximadamente cada <b>15 segundos (4 revisiones por minuto)</b> solo con esta página abierta y visible. Puede abrir posiciones virtuales cuando observa un precio que se mueve al alza entre consultas y cumple los filtros de actividad, riesgo y capital. No opera por obligación. Al cerrarla deja de trabajar. No es un bot de ejecución permanente.</p>
+<p id="source" class="note">Tipo de cambio USD/MXN: pendiente de consulta.</p><p id="scan-summary" class="note">Sin evaluación de mercado.</p><p id="pace" class="note">Revisiones y operaciones recientes: 0.</p><p class="note">Scalping: busca movimientos cortos cada 15 segundos; solo considera compra si el precio consultado cambió entre revisiones. DexScreener no proporciona cotizaciones ejecutables ni garantiza una actualización cada 15 segundos.</p><p class="note" id="sources-status">Buscando fuentes de mercado…</p><div id="diagnostics" class="note">Pulsa «Iniciar simulación automática» para consultar el mercado.</div><div id="candidates" class="note" style="overflow-x:auto"></div>
+</div>
+<div class="metrics" aria-label="Resultados simulados">
+<div class="metric"><span>Capital inicial</span><b>$100.00</b><span>MXN simulados</span></div>
+<div class="metric"><span>Meta neta por minuto</span><b>+$10.00</b><span>MXN simulados; no garantizada</span></div>
+<div class="metric"><span>Patrimonio estimado</span><b id="equity">$100.00</b><span>MXN; incluye posiciones estimadas</span></div>
+<div class="metric"><span>Disponible</span><b id="cash">$100.00</b><span>MXN de caja simulada</span></div>
+<div class="metric"><span>Resultado neto acumulado</span><b id="pnl">$0.00</b><span>MXN; incluye retiros simulados</span></div>
+<div class="metric"><span>Reserva protegida</span><b>$30.00</b><span>No se utiliza para abrir posiciones</span></div>
+<div class="metric"><span>Posiciones abiertas</span><b id="positions">0 / 10</b><span>Máximo simultáneo</span></div>
+<div class="metric"><span>Ganancia/pérdida realizada últimos 60 s</span><b id="minutePnl">$0.00</b><span id="minuteStatus">Meta +$10/min no alcanzada</span></div>
+<div class="metric"><span>Ganancia/pérdida realizada últimos 10 min</span><b id="tenPnl">$0.00</b><span>MXN simulados, netos de costos estimados</span></div>
+<div class="metric"><span>Retiros virtuales a Bitso</span><b id="payouts">$0.00</b><span>Sin transferencias reales</span></div>
+<div class="metric"><span>Última revisión</span><b id="updated">—</b><span>Solo precio de referencia, no cotización</span></div>
+<div class="metric"><span>Siguiente meta virtual</span><b id="goal">$200.00</b><span>MXN, sin garantía</span></div>
+<div class="metric"><span>Progreso de etapa</span><b id="progress">0%</b><span>Incluye retiros simulados</span></div>
+<div class="metric"><span>Pérdida estimada si saltan todos los stops</span><b id="riskTotal">$0.00</b><span>Modelo orientativo; la pérdida puede ser mayor</span></div>
+<div class="metric"><span>Ventas con ganancia / pérdida</span><b id="winloss">0 / 0</b><span>Operaciones cerradas del historial local</span></div>
+</div>
+<div class="card">
+<h2>Reglas del simulador · crecimiento con control de pérdidas</h2>
+<p><b>Objetivo por etapas:</b> $100 → $200 → $400 → $800 MXN. No existe garantía de alcanzar ninguna meta. El patrimonio virtual varía con las posiciones y las comisiones.</p>
+<p><b>Hasta 10 posiciones abiertas</b>, sin obligación de ocuparlas. Reserva virtual <b>$30 MXN</b>, posición de hasta <b>8.5% del patrimonio al inicio</b> (el porcentaje disminuye conforme crece el capital, para permitir más posiciones), y riesgo objetivo <b>1.5% del patrimonio por entrada</b> suponiendo que se pueda ejecutar un stop; las pérdidas reales pueden superar ese límite.</p>
+<p><b>Antes de entrar:</b> liquidez suficiente, presión de compras, tendencia moderadamente positiva y movimiento favorable del precio entre dos consultas. Se revisa el mercado aproximadamente cada 15 segundos mientras la página esté visible. No se fuerza una operación.</p>
+<p><b>Salidas por deterioro:</b> también cierra virtualmente si la liquidez cae de forma acusada, predominan las ventas o se detecta una caída extrema en 5 minutos. Estas son alertas de mercado, NO una auditoría de seguridad on-chain; puede cerrar tarde y con pérdidas.</p>
+<p><b>Salidas hipotéticas del modo scalping:</b> stop por caída del precio del 7%; toma de beneficio desde <b>+3% NETO estimado</b> si el impulso se debilita y cierre prioritario en <b>+6% neto</b>; seguimiento de ganadoras desde +4% neto; y límite de mantenimiento de <b>90 minutos</b>. Ningún stop ni salida está garantizado. Mantener una posición 90 minutos puede igualmente producir pérdidas; el objetivo es evitar ventas por tiempo excesivamente cortas.</p>
+<p><b>Costos estimados:</b> 2.2% del valor más $0.05 MXN por cada compra o venta. No son cotizaciones ejecutables. Con posiciones pequeñas, el punto de equilibrio exige una subida considerable. Las ganancias que queden en la caja virtual se reinvierten automáticamente.</p>
+<p><b>Protecciones:</b> reserva intocable para nuevas entradas, máximo 4.5% del patrimonio de riesgo agregado estimado si se ejecutaran todos los stops a sus precios objetivo, pausa de nuevas entradas con caída estimada del 5% diario y 90 segundos antes de recomprar un token vendido. Los gaps de precio pueden superar todos estos límites.</p>
+<p>Al acumular al menos <b>$1,000 MXN de ganancias netas realizadas no retiradas</b>, y si la caja lo permite, registra un <b>retiro exclusivamente virtual</b> a Bitso. No mueve tokens ni dinero real.</p>
+</div>
+<div class="card"><h2>Direcciones adicionales para observar</h2><p class="muted">El motor puede investigar hasta 145 direcciones de Solana provenientes de hasta ocho consultas a DexScreener. Algunas fuentes son promocionadas o resultados de búsqueda; no equivalen a una lista de las mejores monedas ni a una auditoría. Si quieres seguir un token específico, añade su mint público.</p>
+<label for="mint">Mint público de Solana</label><input id="mint" type="text" placeholder="Pega la dirección pública del token">
+<button id="add">Agregar a observación</button><div id="watchlist" class="note"></div>
+</div>
+<div class="card"><h2>Posiciones de prueba</h2><div id="open">Sin posiciones.</div></div>
+<div class="card"><h2>Historial de operaciones simuladas</h2><div id="history">Sin operaciones.</div>
+<button id="export" class="secondary">Exportar historial CSV</button><button id="reset" class="danger">Reiniciar simulación</button>
+<p class="note">El motor puede pasar mucho tiempo sin abrir una posición: no fuerza operaciones. La V7 inicia una cuenta virtual independiente con $100 MXN para no mezclarla con pruebas anteriores. La actividad de las versiones previas permanece en su propio almacenamiento de navegador. El historial se guarda localmente en este navegador, no en GitHub ni en un servidor. Reiniciar borra el historial local tras confirmación. No equivale a un backtest histórico ni a una prueba de rentabilidad futura.</p>
+</div>
+<div class="card"><h2>Estado de seguridad</h2><p class="red"><b>Compras reales desactivadas.</b> No hay validación completa de holders, sellabilidad, liquidez bloqueada, historial del creador o extensiones de todos los tokens. No se autoriza operar fondos ni acceder a la wallet desde esta simulación.</p><p id="lastError" class="amber"></p></div>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const KEY='solana-paper-scalp-v7-20261027';
+const START=100,RESERVE=30,MAX_POSITIONS=10,MAX_STAKE=.085,RISK=.015,MAX_TOTAL_STOP_RISK=.045,STOP=.07,TAKE=.06,TRAIL=.035,ARM=.04,DAILY=.05,MINUTE_GOAL=10;
+const POLL_MS=15000,COOLDOWN_MS=90*1000,MAX_HOLD_HOURS=1.5,MIN_STAKE=5,MAX_NEW_PER_SCAN=4;
+const ROUND_COST=.022,GAS=.05,MAX_AGE_MS=7*86400000;
+let running=false,busy=false,fx=null,lastPrices={},lastReview=0,summary='Sin evaluación de mercado.',diagnostics='Todavía no se ha realizado una consulta.',recentScans=[],confirmations=new Map(),observedPrices=new Map(),discoveryCache=null,discoveryAt=0,topCandidates=[];
+const money=n=>Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+const signedMoney=n=>(n<0?'-$':'+$')+money(Math.abs(n));
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num=v=>v===null||v===undefined||v===''?null:(Number.isFinite(Number(v))?Number(v):null);
+const isMint=v=>/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v);
+const localDay=()=>new Date().toLocaleDateString('sv-SE',{timeZone:'America/Mexico_City'});
+const initial=()=>({cash:START,open:[],events:[],watch:[],paid:0,realizedNet:0,day:localDay(),dayStart:START,lastCheck:0,cooldowns:{},haltDay:''});
+function load(){try{const v=JSON.parse(localStorage.getItem(KEY));if(!v||!Number.isFinite(v.cash)||!Array.isArray(v.open)||!Array.isArray(v.events)||!Array.isArray(v.watch))return initial();v.cooldowns=v.cooldowns||{};v.haltDay=v.haltDay||'';return v}catch{return initial()}}
+let data=load();
+function persist(){try{localStorage.setItem(KEY,JSON.stringify(data))}catch(e){$('lastError').textContent='No se pudo guardar la simulación en este navegador: '+e.message}}
+function date(t){return new Date(t).toLocaleString('es-MX',{dateStyle:'short',timeStyle:'short'})}
+function equity(){return data.cash+data.open.reduce((acc,p)=>acc+(lastPrices[p.mint]?.price>0&&lastPrices[p.mint].pair===p.pair&&fx?Math.max(0,p.qty*lastPrices[p.mint].price*fx.rate*(1-ROUND_COST)-GAS):p.cost),0)}
+function realizedAndUnrealized(){return equity()+data.paid-START}
+function exitValue(qty,price,rate){return Math.max(0,qty*price*rate*(1-ROUND_COST)-GAS)}
+function stopLossIfTriggered(p){const rate=num(p.entryFx)||fx?.rate;if(!rate)return p.cost;return Math.max(0,p.cost-exitValue(p.qty,p.entryPrice*(1-STOP),rate))}
+function riskExposure(){return data.open.reduce((acc,p)=>acc+stopLossIfTriggered(p),0)}
+function record(event){data.events.unshift(event);data.events=data.events.slice(0,400)}
+function render(){
+$('scan-summary').textContent=summary;
+const cutoff=Date.now()-60000;recentScans=recentScans.filter(t=>t>=cutoff);const minuteEvents=data.events.filter(e=>e.t>=cutoff&&/SIMULADA/.test(e.type));
+const closedTrades=data.events.filter(e=>e.type.startsWith('VENTA SIMULADA')&&Number.isFinite(e.pnl));
+const minutePnl=closedTrades.filter(e=>e.t>=cutoff).reduce((n,e)=>n+e.pnl,0);
+const tenPnl=closedTrades.filter(e=>e.t>=Date.now()-600000).reduce((n,e)=>n+e.pnl,0);
+$('minutePnl').textContent=signedMoney(minutePnl);
+$('tenPnl').textContent=signedMoney(tenPnl);
+$('minuteStatus').textContent=minutePnl>=MINUTE_GOAL?'Meta simulada superada (últimos 60 s)':'Faltan $'+money(Math.max(0,MINUTE_GOAL-minutePnl))+' para meta +$10/min (últimos 60 s)';
+
+$('pace').innerHTML='<b>Últimos 60 s:</b> '+recentScans.length+' revisiones, '+minuteEvents.length+' operaciones virtuales (entradas y salidas). Son eventos simulados, no transacciones on-chain.';
+$('diagnostics').innerHTML=diagnostics;
+$('candidates').innerHTML=topCandidates.length?'<p><b>Tokens observados (reales, NO recomendados):</b></p><table><thead><tr><th>Token</th><th>Liquidez USD</th><th>Precio 5m</th><th>Compras / ventas 5m</th><th>Motivo</th></tr></thead><tbody>'+topCandidates.map(x=>'<tr><td>'+esc(x.symbol)+'</td><td>'+money(x.liq)+'</td><td>'+esc(x.m5===null?'ND':x.m5.toFixed(2)+'%')+'</td><td>'+esc(x.buys===null?'ND':x.buys)+' / '+esc(x.sells===null?'ND':x.sells)+'</td><td>'+esc(x.reason)+'</td></tr>').join('')+'</tbody></table>':'';
+const eq=equity();$('equity').textContent='$'+money(eq);$('cash').textContent='$'+money(data.cash);
+$('pnl').textContent=signedMoney(realizedAndUnrealized());
+$('positions').textContent=data.open.length+' / '+MAX_POSITIONS;$('payouts').textContent='$'+money(data.paid);
+const total=Math.max(0,eq+data.paid);let level=START;while(level*2<=total&&level<1e10)level*=2;const nextGoal=level*2;$('goal').textContent='$'+money(nextGoal);$('progress').textContent=Math.max(0,Math.min(100,(total-level)/(nextGoal-level)*100)).toFixed(1)+'%';$('riskTotal').textContent='$'+money(riskExposure());const closed=data.events.filter(e=>e.type.startsWith('VENTA SIMULADA')&&Number.isFinite(e.pnl));$('winloss').textContent=closed.filter(e=>e.pnl>0).length+' / '+closed.filter(e=>e.pnl<=0).length;
+$('updated').textContent=data.lastCheck?date(data.lastCheck):'—';
+$('state').textContent=busy?'Consultando fuentes de mercado…':running?(data.haltDay===data.day?'ACTIVA · entradas PAUSADAS por pérdida diaria':'ACTIVA · solo con esta página visible'):'DETENIDA · simulación local';
+$('start').disabled=running;$('stop').disabled=!running;
+$('watchlist').innerHTML=data.watch.length?data.watch.map((m,i)=>'<p><code>'+esc(m)+'</code> <button class="secondary mini" data-remove="'+i+'">Quitar</button></p>').join(''):'<p>No hay tokens adicionales.</p>';
+$('open').innerHTML=data.open.length?'<table><thead><tr><th>Token</th><th>Invertido</th><th>Valor salida estimado</th><th>PnL</th></tr></thead><tbody>'+
+data.open.map(p=>{const mark=lastPrices[p.mint];const value=mark&&mark.pair===p.pair&&fx?exitValue(p.qty,mark.price,fx.rate):null;
+return '<tr><td><b>'+esc(p.symbol)+'</b><br><small>'+date(p.opened)+'</small><br><a href="./auditoria.html?mint='+encodeURIComponent(p.mint)+'">Auditar token</a></td><td>$'+money(p.cost)+'</td><td>'+(value===null?'Sin cotización fresca':'$'+money(value))+'</td><td>'+(value===null?'ND':(value-p.cost>=0?'+':'')+'$'+money(value-p.cost))+'</td></tr>'}).join('')+'</tbody></table>':'No hay posiciones simuladas.';
+$('history').innerHTML=data.events.length?'<div style="overflow-x:auto"><table><thead><tr><th>Fecha</th><th>Evento</th><th>Token</th><th>Capital</th><th>PnL neto</th></tr></thead><tbody>'+
+data.events.slice(0,80).map(e=>'<tr><td>'+date(e.t)+'</td><td>'+esc(e.type)+'</td><td>'+esc(e.symbol||'—')+'</td><td>$'+money(e.amount||0)+'</td><td>'+(e.pnl===undefined?'—':(e.pnl>=0?'+':'')+'$'+money(e.pnl))+'</td></tr>').join('')+'</tbody></table></div>':'Sin operaciones.';
+}
+async function json(url){const ctrl=new AbortController();const timeout=setTimeout(()=>ctrl.abort(),11000);try{const r=await fetch(url,{signal:ctrl.signal,headers:{Accept:'application/json'}});if(!r.ok)throw Error('HTTP '+r.status);return await r.json()}finally{clearTimeout(timeout)}}
+async function getFx(){
+const now=Date.now();
+if(fx&&now-fx.checked<60*60000)return fx;
+const errors=[];
+try{
+const response=await json('https://api.frankfurter.dev/v1/latest?base=USD&symbols=MXN');
+const rate=num(response?.rates?.MXN),day=response?.date,asof=day?Date.parse(day+'T00:00:00Z'):NaN;
+if(!rate||rate<5||rate>50||!Number.isFinite(asof)||now-asof>MAX_AGE_MS)throw Error('Datos incompletos o antiguos');
+fx={rate,date:day,checked:now,source:'Frankfurter'};
+$('source').textContent='USD/MXN: '+rate.toFixed(4)+' (referencia del '+day+'; fuente Frankfurter; no ejecutable).';
+return fx;
+}catch(e){errors.push('Frankfurter: '+e.message)}
+try{
+const response=await json('https://open.er-api.com/v6/latest/USD');
+const rate=num(response?.rates?.MXN);
+const at=Date.parse(response?.time_last_update_utc||''),age=now-at;
+if(response?.result!=='success'||!rate||rate<5||rate>50||!Number.isFinite(at)||age>72*3600000||age< -24*3600000)throw Error('Datos incompletos o antiguos');
+fx={rate,date:new Date(at).toISOString().slice(0,10),checked:now,source:'ExchangeRate-API'};
+$('source').innerHTML='USD/MXN: '+rate.toFixed(4)+' (referencia del '+fx.date+'; no ejecutable). <a href="https://www.exchangerate-api.com/" target="_blank" rel="noopener noreferrer">Rates By Exchange Rate API</a>.';
+return fx;
+}catch(e){errors.push('ExchangeRate-API: '+e.message)}
+throw Error('No fue posible consultar USD/MXN: '+errors.join(' | '));
+}
+function pairsFor(token,all){const valid=all.filter(p=>p.chainId==='solana'&&p.baseToken?.address===token&&num(p.priceUsd)>0&&num(p.liquidity?.usd)>0);
+valid.sort((a,b)=>(num(b.liquidity?.usd)||0)-(num(a.liquidity?.usd)||0));return valid[0]||null}
+function inspectSignal(p){
+if(!p)return {ok:false,score:0,reason:'Sin cotización válida'};
+const q={liq:num(p.liquidity?.usd),vol24:num(p.volume?.h24),vol5:num(p.volume?.m5),m5:num(p.priceChange?.m5),h1:num(p.priceChange?.h1),h24:num(p.priceChange?.h24),buys:num(p.txns?.m5?.buys),sells:num(p.txns?.m5?.sells),created:num(p.pairCreatedAt)};
+if(Object.values(q).some(v=>v===null))return {ok:false,score:0,reason:'Datos incompletos'};
+const age=(Date.now()-q.created)/3600000;
+let reason='';
+if(age<.25)reason='Menos de 15 min de antigüedad';
+else if(age>720)reason='Más de 30 días';
+else if(q.liq<18000)reason='Liquidez inferior a USD 18,000';
+else if(q.vol5<300||q.vol24<3500)reason='Volumen insuficiente';
+else if(q.vol24/q.liq<.12||q.vol24/q.liq>35)reason='Rotación anómala';
+else if(q.m5<.3||q.m5>17)reason='Tendencia de 5 min no favorable';
+else if(q.h1<1||q.h1>70)reason='Tendencia de 1 h no favorable';
+else if(q.h24< -35||q.h24>220)reason='Tendencia diaria excesiva';
+else if(q.buys+q.sells<10||q.sells<3)reason='Pocas ventas para evaluar salida';
+else if(q.buys<q.sells*1.08)reason='Presión compradora insuficiente';
+const buyRatio=q.buys/Math.max(1,q.sells);
+const score=Math.min(100,Math.round(
+Math.min(1,q.liq/90000)*22+
+Math.min(1,q.vol5/4200)*20+
+Math.min(2.2,buyRatio)/2.2*22+
+Math.min(1,q.m5/7)*18+
+Math.min(1,q.h1/18)*14+
+Math.min(1,age/24)*4));
+if(!reason&&score<40)reason='Puntuación de actividad inferior al mínimo';
+return {ok:!reason,score,reason:reason||'Actividad favorable; seguridad on-chain no auditada'}
+}
+function signal(p){return inspectSignal(p).ok}
+function reportMarket(m){
+const reasons={},rejected=[],qualifying=[],wait=[],now=Date.now(),seen=new Set(),leaderboard=[];
+let unchanged=0,favorablePriceUpdates=0;
+for(const mint of m.mints){
+const p=m.byMint[mint],result=inspectSignal(p);
+if(!p){
+reasons[result.reason]=(reasons[result.reason]||0)+1;confirmations.delete(mint);continue;
+}
+const quote=num(p.priceUsd),pair=p.pairAddress,prev=observedPrices.get(mint);
+const hasPrevious=!!(prev&&prev.pair===pair&&now-prev.at<=120000&&prev.price>0);
+const pct=hasPrevious?(quote/prev.price-1)*100:null;
+const upward=hasPrevious&&pct>=.08&&pct<=7;
+observedPrices.set(mint,{price:quote,pair,at:now});
+const label=String(p.baseToken?.symbol||p.baseToken?.name||'?').slice(0,22);
+if(!result.ok){
+reasons[result.reason]=(reasons[result.reason]||0)+1;confirmations.delete(mint);
+if(rejected.length<5)rejected.push({symbol:label,reason:result.reason});
+leaderboard.push({symbol:label,liq:num(p.liquidity?.usd)||0,m5:num(p.priceChange?.m5),buys:num(p.txns?.m5?.buys),sells:num(p.txns?.m5?.sells),reason:result.reason,score:result.score});
+continue;
+}
+seen.add(mint);
+const old=confirmations.get(mint);
+const consistent=old&&old.pair===pair&&now-old.last<=120000&&quote>=old.price*.98&&quote<=old.price*1.22;
+const state=consistent?{count:Math.min(6,old.count+1),first:old.first,last:now,price:quote,pair}:
+{count:1,first:now,last:now,price:quote,pair};
+confirmations.set(mint,state);
+let description='';
+if(!hasPrevious){description='Esperando segundo precio independiente';unchanged++}
+else if(!upward){description=(pct!==null&&Math.abs(pct)<.08)?'Precio sin movimiento útil':'Movimiento entre revisiones no favorable';unchanged++}
+else if(state.count<2){description='Esperando confirmación de tendencia'}
+else {description='Scalping: señal de actividad '+result.score+'/100';favorablePriceUpdates++;qualifying.push({mint,p,score:result.score})}
+if(!qualifying.some(x=>x.mint===mint))wait.push(mint);
+leaderboard.push({symbol:label,liq:num(p.liquidity?.usd)||0,m5:num(p.priceChange?.m5),buys:num(p.txns?.m5?.buys),sells:num(p.txns?.m5?.sells),reason:description,score:result.score});
+}
+for(const [mint,state] of confirmations){if(now-state.last>180000||(!seen.has(mint)&&!data.open.some(p=>p.mint===mint)))confirmations.delete(mint)}
+for(const [mint,mark] of observedPrices){if(now-mark.at>180000)observedPrices.delete(mint)}
+qualifying.sort((a,b)=>b.score-a.score||(num(b.p.liquidity?.usd)||0)-(num(a.p.liquidity?.usd)||0));
+topCandidates=leaderboard.sort((a,b)=>b.score-a.score||b.liq-a.liq).slice(0,12);
+const counts=Object.entries(reasons).sort((a,b)=>b[1]-a[1]).slice(0,8);
+const feed=m.sources.map(f=>esc(f.label)+': '+f.n+(f.error?' (sin respuesta)':'')).join(' · ');
+diagnostics='<p><b>Universo:</b> '+m.mints.length+' tokens · '+Object.keys(m.byMint).length+' pares · <b>'+qualifying.length+' señales con precio al alza entre consultas</b> · '+unchanged+' sin cambio confirmado.</p>'+
+'<p><b>Fuentes:</b> '+feed+'</p>'+
+(qualifying.length===0?'<p class="amber">Sin compra virtual: falta una subida confirmada entre dos cotizaciones distintas, o los filtros de riesgo no se cumplen. No comprar a precio inmóvil evita pagar comisiones inútiles.</p>':'<p>Las señales indican movimiento de precio observado, no una garantía de rentabilidad ni seguridad.</p>')+
+'<p><b>Motivos de descarte:</b> '+(counts.length?counts.map(([why,n])=>'<span style="display:inline-block;margin:3px 6px 3px 0;padding:5px 8px;border-radius:7px;background:#151820">'+esc(why)+': <b>'+n+'</b></span>').join(''):'Ninguno')+'</p>'+
+(rejected.length?'<p><b>Ejemplos descartados:</b> '+rejected.map(x=>esc(x.symbol)+' ('+esc(x.reason)+')').join(' · ')+'</p>':'')+
+(m.failures.length?'<p class="amber"><b>Fuentes con errores:</b> '+m.failures.map(esc).join(' · ')+'</p>':'')+
+'<p class="amber">Solo precios de referencia. No se auditan honeypots, liquidez bloqueada, transacciones on-chain ni posibilidad real de venta; no realiza compras reales.</p>';
+return qualifying;
+}
+async function market(){
+const now=Date.now();
+if(!discoveryCache||now-discoveryAt>90000){
+const feedSpecs=[
+{label:'Perfiles recientes',url:'https://api.dexscreener.com/token-profiles/latest/v1',kind:'tokens'},
+{label:'Boosts destacados (publicidad pagada)',url:'https://api.dexscreener.com/token-boosts/top/v1',kind:'tokens'},
+{label:'Boosts recientes (publicidad pagada)',url:'https://api.dexscreener.com/token-boosts/latest/v1',kind:'tokens'},
+{label:'Community takeovers',url:'https://api.dexscreener.com/community-takeovers/latest/v1',kind:'tokens'},
+{label:'Anuncios (publicidad pagada)',url:'https://api.dexscreener.com/ads/latest/v1',kind:'tokens'},
+{label:'Búsqueda memecoin',url:'https://api.dexscreener.com/latest/dex/search?q=meme',kind:'pairs'},
+{label:'Búsqueda pump',url:'https://api.dexscreener.com/latest/dex/search?q=pump',kind:'pairs'},
+{label:'Búsqueda BONK',url:'https://api.dexscreener.com/latest/dex/search?q=bonk',kind:'pairs'}
+];
+const responses=await Promise.allSettled(feedSpecs.map(f=>json(f.url)));
+const sources=[],addresses=[],failures=[];
+for(let i=0;i<responses.length;i++){
+const r=responses[i],spec=feedSpecs[i];
+if(r.status==='fulfilled'){
+const found=spec.kind==='pairs'?r.value?.pairs:r.value;
+if(Array.isArray(found)){
+const mints=[...new Set(found.filter(p=>p.chainId==='solana')
+.map(p=>spec.kind==='pairs'?p.baseToken?.address:p.tokenAddress).filter(isMint))].slice(0,30);
+addresses.push(...mints);sources.push({label:spec.label,n:mints.length});continue;
+}
+}
+const why=r.status==='rejected'?String(r.reason?.message||r.reason):'Respuesta inválida';
+failures.push(spec.label+': '+why);sources.push({label:spec.label,n:0,error:true});
+}
+if(!addresses.length&&!data.watch.length&&!data.open.length)throw Error('Ninguna fuente devolvió tokens Solana: '+failures.join(' | '));
+discoveryCache={addresses:[...new Set(addresses)],sources,failures};
+discoveryAt=now;
+}
+const unique=[...new Set([...data.open.map(p=>p.mint),...data.watch,...discoveryCache.addresses])].slice(0,145);
+if(!unique.length)throw Error('El universo de Solana está vacío');
+const chunks=[];for(let i=0;i<unique.length;i+=30)chunks.push(unique.slice(i,i+30));
+const attempts=await Promise.allSettled(chunks.map(chunk=>json('https://api.dexscreener.com/tokens/v1/solana/'+chunk.join(','))));
+const all=[],lookupFailures=[];
+for(let i=0;i<attempts.length;i++){
+const attempt=attempts[i];
+if(attempt.status==='fulfilled'&&Array.isArray(attempt.value))all.push(...attempt.value);
+else lookupFailures.push('Consulta '+(i+1)+': '+(attempt.status==='rejected'?attempt.reason.message:'Respuesta inválida'));
+}
+if(!all.length)throw Error('No se pudieron obtener cotizaciones DexScreener: '+lookupFailures.join(' | '));
+const byMint={};
+for(const token of unique){
+const held=data.open.find(p=>p.mint===token);
+const exact=held?all.find(p=>p.chainId==='solana'&&p.baseToken?.address===token&&p.pairAddress===held.pair&&num(p.priceUsd)>0):null;
+const p=exact||pairsFor(token,all);
+if(p)byMint[token]=p;
+}
+$('sources-status').textContent='DexScreener: '+Object.keys(byMint).length+' pares con precios; '+discoveryCache.sources.length+' búsquedas en caché de 90 s.';
+return {mints:unique,byMint,sources:discoveryCache.sources,failures:[...discoveryCache.failures,...lookupFailures]}
+}
+function openTrade(mint,p,rate){
+if(data.open.some(t=>t.mint===mint)||data.open.length>=MAX_POSITIONS||(data.cooldowns[mint]&&Date.now()-data.cooldowns[mint]<COOLDOWN_MS))return false;
+const usable=data.cash-RESERVE,eq=equity(),slots=Math.max(1,MAX_POSITIONS-data.open.length),riskBudget=eq*RISK;
+const remainingRisk=eq*MAX_TOTAL_STOP_RISK-riskExposure();
+const stopFactor=(1-STOP)*(1-ROUND_COST)/(1+ROUND_COST);
+const maxStakeRisk=(remainingRisk-GAS*(1+stopFactor))/(1-stopFactor);
+const diversifiedFraction=Math.max(.032,MAX_STAKE-Math.max(0,eq-START)*.00025);
+const stake=Math.min(usable/slots,eq*diversifiedFraction,riskBudget/(STOP+2*ROUND_COST+2*GAS/MIN_STAKE),maxStakeRisk);
+const price=num(p.priceUsd);
+if(!price||!Number.isFinite(stake)||stake<MIN_STAKE||!p.pairAddress||!Number.isFinite(rate)||rate<=0)return false;
+const qty=(stake-GAS)/(price*rate*(1+ROUND_COST));
+if(!Number.isFinite(qty)||qty<=0||data.cash-stake<RESERVE-.000001)return false;
+data.cash-=stake;
+data.open.push({mint,pair:p.pairAddress,symbol:String(p.baseToken?.symbol||'?').slice(0,30),opened:Date.now(),cost:stake,qty,entryPrice:price,entryFx:rate,entryLiquidity:num(p.liquidity?.usd),peak:price});
+confirmations.delete(mint);
+record({t:Date.now(),type:'COMPRA SIMULADA',symbol:p.baseToken?.symbol,amount:stake});
+return true
+}
+function closeTrade(p,price,rate,reason){
+const proceeds=exitValue(p.qty,price,rate);
+const pnl=proceeds-p.cost;
+data.cash+=proceeds;data.realizedNet+=pnl;data.cooldowns[p.mint]=Date.now();
+data.open=data.open.filter(o=>o!==p);confirmations.delete(p.mint);
+record({t:Date.now(),type:'VENTA SIMULADA · '+reason,symbol:p.symbol,amount:proceeds,pnl});
+}
+
+function maybeVirtualPayout(){
+const claim=data.realizedNet-data.paid;
+const payable=Math.min(claim,data.cash-RESERVE);
+if(claim>=1000&&payable>=1000){
+data.cash-=payable;data.paid+=payable;data.dayStart-=payable;
+record({t:Date.now(),type:'RETIRO VIRTUAL BITSO',amount:payable,pnl:0});
+}}
+function refreshDay(){
+const today=localDay();
+if(data.day!==today){data.day=today;data.dayStart=equity();data.haltDay='';record({t:Date.now(),type:'NUEVA JORNADA',amount:data.dayStart})}
+}
+async function tick(){
+if(busy||document.hidden)return;busy=true;$('lastError').textContent='';render();
+try{
+const rate=(await getFx()).rate;refreshDay();
+const m=await market(),now=Date.now(),prices={};let n=0,opened=0,priceGap=false,riskExit=false;const qualifying=reportMarket(m);
+for(const [mint,p] of Object.entries(m.byMint)){const price=num(p.priceUsd);if(price>0){prices[mint]={price,pair:p.pairAddress,at:now};n++}}
+lastPrices=prices;
+for(const pos of [...data.open]){
+const p=m.byMint[pos.mint],quote=prices[pos.mint];
+if(!p||!quote||quote.pair!==pos.pair){priceGap=true;$('lastError').textContent='Algunas posiciones no tienen cotización del mismo par: se mantienen sin valorar ni cerrar.';continue}
+const price=quote.price;pos.peak=Math.max(pos.peak,price);
+const factor=price/pos.entryPrice,net=(exitValue(pos.qty,price,rate)-pos.cost)/pos.cost;
+const peakNet=(exitValue(pos.qty,pos.peak,rate)-pos.cost)/pos.cost;
+const hours=(now-pos.opened)/3600000;
+const buys=num(p.txns?.m5?.buys),sells=num(p.txns?.m5?.sells),fiveMin=num(p.priceChange?.m5);
+const liq=num(p.liquidity?.usd),oldLiq=num(pos.entryLiquidity);
+const liquidityWarning=liq!==null&&((oldLiq!==null&&oldLiq>0&&liq<oldLiq*.6)||liq<12000);
+const sellPressure=buys!==null&&sells!==null&&sells>=5&&((sells>Math.max(1,buys)*1.9&&fiveMin!==null&&fiveMin< -1)||(sells>Math.max(1,buys)*1.35&&fiveMin!==null&&fiveMin< -5));
+const marketReversal=fiveMin!==null&&fiveMin<=-9;
+if(factor<=1-STOP){closeTrade(pos,price,rate,'STOP · PÉRDIDA REFERENCIAL');riskExit=true;}
+else if(liquidityWarning){closeTrade(pos,price,rate,'RIESGO · CAÍDA DE LIQUIDEZ');riskExit=true;}
+else if(sellPressure||marketReversal){closeTrade(pos,price,rate,'RIESGO · PRESIÓN VENDEDORA');riskExit=true;}
+else if(net>=TAKE)closeTrade(pos,price,rate,'SCALPING · BENEFICIO NETO OBJETIVO');
+else if(peakNet>=ARM&&price<=pos.peak*(1-TRAIL))closeTrade(pos,price,rate,'SCALPING · SEGUIMIENTO DE BENEFICIO');
+else if(net>=.03&&((fiveMin!==null&&fiveMin<.1)||(buys!==null&&sells!==null&&sells>buys*1.15)))closeTrade(pos,price,rate,'SCALPING · BENEFICIO ANTE DEBILIDAD');
+else if(hours>=MAX_HOLD_HOURS)closeTrade(pos,price,rate,'TIEMPO MÁXIMO 90 MIN');
+}
+maybeVirtualPayout();
+if(equity()<=data.dayStart*(1-DAILY)){data.haltDay=data.day;$('lastError').textContent='Caída diaria estimada ≥ 5%: nuevas entradas bloqueadas; salidas simuladas siguen vigilándose mientras la página permanezca visible.'}
+if(running&&data.haltDay!==data.day&&!priceGap&&!riskExit){
+for(const item of qualifying){
+if(data.open.length>=MAX_POSITIONS||opened>=MAX_NEW_PER_SCAN)break;
+if(openTrade(item.mint,item.p,rate))opened++;
+}
+}
+data.lastCheck=now;lastReview=now;recentScans.push(now);
+summary='Última revisión: '+n+' tokens cotizados, '+qualifying.length+' señales confirmadas de mercado, '+opened+' nuevas posiciones virtuales. '+(priceGap?'Entradas bloqueadas por falta de cotización. ':riskExit?'Entradas pausadas en esta revisión tras salida por riesgo. ':'')+date(now)+'. Las señales no equivalen a verificación de seguridad.';
+if(opened===0&&qualifying.length>0&&running){let why=priceGap?'Falta la cotización de una posición existente':riskExit?'Salida por riesgo detectada en esta revisión':data.haltDay===data.day?'Límite de pérdida diaria activado':data.open.length>=MAX_POSITIONS?'Diez posiciones ocupadas':data.cash-RESERVE<MIN_STAKE?'Reserva y caja insuficiente':riskExposure()>=equity()*MAX_TOTAL_STOP_RISK-.75?'Presupuesto conjunto de riesgo agotado':'Pausa del token, tamaño mínimo o cupos de entrada';diagnostics+='<p class="amber"><b>Sin nueva compra:</b> '+esc(why)+'. Una señal favorable no obliga a entrar.</p>';}
+persist();
+}catch(e){summary='Revisión fallida; los datos no están actualizados.';diagnostics='<p class="red">Consulta fallida: '+esc(e.message)+'. No se intentaron nuevas compras simuladas.</p>';$('lastError').textContent='Revisión cancelada; sin nuevas operaciones: '+e.message+'. No se inventaron precios ni tipo de cambio.'}
+finally{busy=false;render()}}
+$('start').onclick=()=>{running=true;render();tick()};
+$('stop').onclick=()=>{running=false;render()};
+$('once').onclick=async()=>{await tick()};
+$('add').onclick=()=>{const m=$('mint').value.trim();if(!isMint(m)){alert('Introduce un mint público válido de Solana');return}if(data.watch.includes(m)){alert('Ya está en observación');return}if(data.watch.length>=10){alert('Máximo 10 mints adicionales');return}data.watch.push(m);$('mint').value='';persist();render()};
+$('watchlist').onclick=e=>{const btn=e.target.closest('button[data-remove]');if(!btn)return;const i=Number(btn.dataset.remove);if(Number.isInteger(i)&&i>=0&&i<data.watch.length){data.watch.splice(i,1);persist();render()}};
+$('reset').onclick=()=>{if(!confirm('¿Borrar todas las posiciones, resultados, observación y retiros VIRTUALES?'))return;running=false;lastPrices={};data=initial();persist();render();$('lastError').textContent='Simulación reiniciada.'};
+$('export').onclick=()=>{const rows=[['fecha','evento','token','importe_mxn','pnl_neto_mxn'],...data.events.slice().reverse().map(e=>[new Date(e.t).toISOString(),e.type,e.symbol||'',e.amount||0,e.pnl??''])];const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');const url=URL.createObjectURL(new Blob(['\ufeff',csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='solana-simulacion.csv';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+setInterval(()=>{if(running&&!document.hidden)tick()},POLL_MS);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&running)tick()});
+render();
+</script></body></html>
