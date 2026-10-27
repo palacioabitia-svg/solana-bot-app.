@@ -171,54 +171,56 @@ return {ok:!reason,score,reason:reason||'Actividad favorable; seguridad on-chain
 }
 function signal(p){return inspectSignal(p).ok}
 function reportMarket(m){
-const reasons={},rejected=[],qualifying=[],wait=[],now=Date.now(),seen=new Set(),leaderboard=[];
-let unchanged=0,favorablePriceUpdates=0;
+const reasons={},qualifying=[],now=Date.now(),leaderboard=[];
+let noChange=0,priceUpdates=0,flowUpdates=0,waiting=0;
 for(const mint of m.mints){
 const p=m.byMint[mint],result=inspectSignal(p);
-if(!p){
-reasons[result.reason]=(reasons[result.reason]||0)+1;confirmations.delete(mint);continue;
-}
-const quote=num(p.priceUsd),pair=p.pairAddress,prev=observedPrices.get(mint);
-const hasPrevious=!!(prev&&prev.pair===pair&&now-prev.at<=120000&&prev.price>0);
-const pct=hasPrevious?(quote/prev.price-1)*100:null;
-const upward=hasPrevious&&pct>=.08&&pct<=7;
-observedPrices.set(mint,{price:quote,pair,at:now});
-const label=String(p.baseToken?.symbol||p.baseToken?.name||'?').slice(0,22);
-if(!result.ok){
-reasons[result.reason]=(reasons[result.reason]||0)+1;confirmations.delete(mint);
-if(rejected.length<5)rejected.push({symbol:label,reason:result.reason});
-leaderboard.push({symbol:label,liq:num(p.liquidity?.usd)||0,m5:num(p.priceChange?.m5),buys:num(p.txns?.m5?.buys),sells:num(p.txns?.m5?.sells),reason:result.reason,score:result.score});
-continue;
-}
-seen.add(mint);
-const old=confirmations.get(mint);
-const consistent=old&&old.pair===pair&&now-old.last<=120000&&quote>=old.price*.98&&quote<=old.price*1.22;
-const state=consistent?{count:Math.min(6,old.count+1),first:old.first,last:now,price:quote,pair}:
-{count:1,first:now,last:now,price:quote,pair};
+if(!p){reasons[result.reason]=(reasons[result.reason]||0)+1;confirmations.delete(mint);continue}
+const price=num(p.priceUsd),pair=p.pairAddress,buys=num(p.txns?.m5?.buys),sells=num(p.txns?.m5?.sells),volume=num(p.volume?.m5);
+const prior=observedPrices.get(mint);
+const comparable=!!(prior&&prior.pair===pair&&price>0&&prior.price>0&&now-prior.at<=180000);
+const delta=comparable?(price/prior.price-1)*100:null;
+const buyDelta=comparable&&buys!==null&&prior.buys!==null?buys-prior.buys:null;
+const sellDelta=comparable&&sells!==null&&prior.sells!==null?sells-prior.sells:null;
+const volumeDelta=comparable&&volume!==null&&prior.volume!==null?volume-prior.volume:null;
+// Las cifras m5 son ventanas móviles; sus cambios son indicios, no operaciones confirmadas en cadena.
+const risingPrice=comparable&&delta>=.04&&delta<=6;
+const risingFlow=comparable&&delta>=-.04&&delta<.04&&buyDelta!==null&&sellDelta!==null&&volumeDelta!==null&&buyDelta>=2&&buyDelta>Math.max(0,sellDelta)+1&&volumeDelta>=50&&(num(p.priceChange?.m5)||0)>=2;
+const fresh=risingPrice||risingFlow;
+observedPrices.set(mint,{price,pair,at:now,buys,sells,volume});
+const name=String(p.baseToken?.symbol||p.baseToken?.name||'?').slice(0,22);
+let reason=result.reason;
+if(!result.ok){reasons[reason]=(reasons[reason]||0)+1;confirmations.delete(mint)}
+else {
+const prev=confirmations.get(mint);
+const stable=prev&&prev.pair===pair&&now-prev.last<=180000&&price>=prev.price*.97&&price<=prev.price*1.12;
+const state=stable?{count:Math.min(6,prev.count+1),first:prev.first,last:now,price,pair}:{count:1,first:now,last:now,price,pair};
 confirmations.set(mint,state);
-let description='';
-if(!hasPrevious){description='Esperando segundo precio independiente';unchanged++}
-else if(!upward){description=(pct!==null&&Math.abs(pct)<.08)?'Precio sin movimiento útil':'Movimiento entre revisiones no favorable';unchanged++}
-else if(state.count<2){description='Esperando confirmación de tendencia'}
-else {description='Scalping: señal de actividad '+result.score+'/100';favorablePriceUpdates++;qualifying.push({mint,p,score:result.score})}
-if(!qualifying.some(x=>x.mint===mint))wait.push(mint);
-leaderboard.push({symbol:label,liq:num(p.liquidity?.usd)||0,m5:num(p.priceChange?.m5),buys:num(p.txns?.m5?.buys),sells:num(p.txns?.m5?.sells),reason:description,score:result.score});
+if(!comparable){reason='Falta segunda cotización';waiting++}
+else if(!fresh){reason=(Math.abs(delta||0)<.04&&buyDelta===0&&sellDelta===0)?'DexScreener repitió el mismo precio y transacciones':'Sin impulso positivo nuevo entre consultas';noChange++}
+else if(state.count<2){reason='Confirmación inicial de impulso';waiting++}
+else {
+reason=(risingPrice?'Precio subió ':'Compras/volumen avanzaron ')+'· señal '+result.score+'/100';
+qualifying.push({mint,p,score:result.score,signal:risingPrice?'price':'flow'});
+if(risingPrice)priceUpdates++;else flowUpdates++;
 }
-for(const [mint,state] of confirmations){if(now-state.last>180000||(!seen.has(mint)&&!data.open.some(p=>p.mint===mint)))confirmations.delete(mint)}
-for(const [mint,mark] of observedPrices){if(now-mark.at>180000)observedPrices.delete(mint)}
+}
+leaderboard.push({symbol:name,liq:num(p.liquidity?.usd)||0,m5:num(p.priceChange?.m5),buys,sells,reason,score:result.score});
+}
+for(const [mint,state] of confirmations){if(now-state.last>180000)confirmations.delete(mint)}
+for(const [mint,state] of observedPrices){if(now-state.at>180000)observedPrices.delete(mint)}
 qualifying.sort((a,b)=>b.score-a.score||(num(b.p.liquidity?.usd)||0)-(num(a.p.liquidity?.usd)||0));
 topCandidates=leaderboard.sort((a,b)=>b.score-a.score||b.liq-a.liq).slice(0,12);
-const counts=Object.entries(reasons).sort((a,b)=>b[1]-a[1]).slice(0,8);
-const feed=m.sources.map(f=>esc(f.label)+': '+f.n+(f.error?' (sin respuesta)':'')).join(' · ');
-diagnostics='<p><b>Universo:</b> '+m.mints.length+' tokens · '+Object.keys(m.byMint).length+' pares · <b>'+qualifying.length+' señales con precio al alza entre consultas</b> · '+unchanged+' sin cambio confirmado.</p>'+
-'<p><b>Fuentes:</b> '+feed+'</p>'+
-(qualifying.length===0?'<p class="amber">Sin compra virtual: falta una subida confirmada entre dos cotizaciones distintas, o los filtros de riesgo no se cumplen. No comprar a precio inmóvil evita pagar comisiones inútiles.</p>':'<p>Las señales indican movimiento de precio observado, no una garantía de rentabilidad ni seguridad.</p>')+
-'<p><b>Motivos de descarte:</b> '+(counts.length?counts.map(([why,n])=>'<span style="display:inline-block;margin:3px 6px 3px 0;padding:5px 8px;border-radius:7px;background:#151820">'+esc(why)+': <b>'+n+'</b></span>').join(''):'Ninguno')+'</p>'+
-(rejected.length?'<p><b>Ejemplos descartados:</b> '+rejected.map(x=>esc(x.symbol)+' ('+esc(x.reason)+')').join(' · ')+'</p>':'')+
-(m.failures.length?'<p class="amber"><b>Fuentes con errores:</b> '+m.failures.map(esc).join(' · ')+'</p>':'')+
-'<p class="amber">Solo precios de referencia. No se auditan honeypots, liquidez bloqueada, transacciones on-chain ni posibilidad real de venta; no realiza compras reales.</p>';
-return qualifying;
+const counts=Object.entries(reasons).sort((a,b)=>b[1]-a[1]).slice(0,6);
+diagnostics='<p><b>Escaneados:</b> '+m.mints.length+' tokens · '+Object.keys(m.byMint).length+' con precio · <b>'+qualifying.length+' nuevas señales</b> ('+priceUpdates+' por precio, '+flowUpdates+' por compras/volumen) · '+noChange+' sin actualización favorable · '+waiting+' esperando.</p>'+
+'<p><b>Fuentes:</b> '+m.sources.map(f=>esc(f.label)+': '+f.n+(f.error?' (sin respuesta)':'')).join(' · ')+'</p>'+
+'<p><b>Descartes:</b> '+(counts.length?counts.map(([reason,n])=>'<span style="display:inline-block;background:#151820;border-radius:6px;padding:4px 7px;margin:2px">'+esc(reason)+': '+n+'</span>').join(''):'Ninguno')+'</p>'+
+(qualifying.length===0?'<p class="amber"><b>Por qué no compró:</b> no hubo ninguna señal nueva confirmada en datos de precio o flujo que cumpliera los filtros.</p>':'<p>Señales de actividad, NO validaciones de seguridad ni garantía de retorno.</p>')+
+(m.failures.length?'<p class="amber"><b>Fallos de fuentes:</b> '+m.failures.map(esc).join(' · ')+'</p>':'')+
+'<p class="amber">Sin ejecución real; datos públicos que pueden estar retrasados, incompletos o manipulados. No se ha probado la posibilidad real de venta.</p>';
+return qualifying
 }
+
 async function market(){
 const now=Date.now();
 if(!discoveryCache||now-discoveryAt>90000){
