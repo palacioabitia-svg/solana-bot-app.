@@ -200,7 +200,7 @@ if(!hasPrevious){description='Esperando segundo precio independiente';unchanged+
 else if(!upward){description=(pct!==null&&Math.abs(pct)<.08)?'Precio sin movimiento útil':'Movimiento entre revisiones no favorable';unchanged++}
 else if(state.count<2){description='Esperando confirmación de tendencia'}
 else {description='Scalping: señal de actividad '+result.score+'/100';favorablePriceUpdates++;qualifying.push({mint,p,score:result.score})}
-if(qualifying.length+wait.length<m.mints.length&&!qualifying.some(x=>x.mint===mint))wait.push(mint);
+if(!qualifying.some(x=>x.mint===mint))wait.push(mint);
 leaderboard.push({symbol:label,liq:num(p.liquidity?.usd)||0,m5:num(p.priceChange?.m5),buys:num(p.txns?.m5?.buys),sells:num(p.txns?.m5?.sells),reason:description,score:result.score});
 }
 for(const [mint,state] of confirmations){if(now-state.last>180000||(!seen.has(mint)&&!data.open.some(p=>p.mint===mint)))confirmations.delete(mint)}
@@ -327,13 +327,13 @@ const liq=num(p.liquidity?.usd),oldLiq=num(pos.entryLiquidity);
 const liquidityWarning=liq!==null&&((oldLiq!==null&&oldLiq>0&&liq<oldLiq*.6)||liq<12000);
 const sellPressure=buys!==null&&sells!==null&&sells>=5&&((sells>Math.max(1,buys)*1.9&&fiveMin!==null&&fiveMin< -1)||(sells>Math.max(1,buys)*1.35&&fiveMin!==null&&fiveMin< -5));
 const marketReversal=fiveMin!==null&&fiveMin<=-9;
-if(factor<=1-STOP){closeTrade(pos,price,rate,'LÍMITE DE PÉRDIDA REFERENCIAL');riskExit=true;}
+if(factor<=1-STOP){closeTrade(pos,price,rate,'STOP · PÉRDIDA REFERENCIAL');riskExit=true;}
 else if(liquidityWarning){closeTrade(pos,price,rate,'RIESGO · CAÍDA DE LIQUIDEZ');riskExit=true;}
-else if(sellPressure||marketReversal){closeTrade(pos,price,rate,'RIESGO · DETERIORO DE MERCADO');riskExit=true;}
-else if(net>=TAKE)closeTrade(pos,price,rate,'META DE BENEFICIO NETO');
-else if(peakNet>=ARM&&price<=pos.peak*(1-TRAIL))closeTrade(pos,price,rate,'SEGUIMIENTO DE GANANCIA');
-else if(net>=.08&&((fiveMin!==null&&fiveMin<0)||(buys!==null&&sells!==null&&sells>buys*1.4)))closeTrade(pos,price,rate,'GANANCIA NETA · REVISIÓN DE TENDENCIA');
-else if(hours>=MAX_HOLD_HOURS)closeTrade(pos,price,rate,'TIEMPO MÁXIMO 6H');
+else if(sellPressure||marketReversal){closeTrade(pos,price,rate,'RIESGO · PRESIÓN VENDEDORA');riskExit=true;}
+else if(net>=TAKE)closeTrade(pos,price,rate,'SCALPING · BENEFICIO NETO OBJETIVO');
+else if(peakNet>=ARM&&price<=pos.peak*(1-TRAIL))closeTrade(pos,price,rate,'SCALPING · SEGUIMIENTO DE BENEFICIO');
+else if(net>=.03&&((fiveMin!==null&&fiveMin<.1)||(buys!==null&&sells!==null&&sells>buys*1.15)))closeTrade(pos,price,rate,'SCALPING · BENEFICIO ANTE DEBILIDAD');
+else if(hours>=MAX_HOLD_HOURS)closeTrade(pos,price,rate,'TIEMPO MÁXIMO 90 MIN');
 }
 maybeVirtualPayout();
 if(equity()<=data.dayStart*(1-DAILY)){data.haltDay=data.day;$('lastError').textContent='Caída diaria estimada ≥ 5%: nuevas entradas bloqueadas; salidas simuladas siguen vigilándose mientras la página permanezca visible.'}
