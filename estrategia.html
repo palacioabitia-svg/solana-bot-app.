@@ -36,6 +36,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <div class="metric"><span>Última revisión</span><b id="updated">—</b><span>Solo precio de referencia, no cotización</span></div>
 <div class="metric"><span>Siguiente meta virtual</span><b id="goal">$200.00</b><span>MXN, sin garantía</span></div>
 <div class="metric"><span>Progreso de etapa</span><b id="progress">0%</b><span>Incluye retiros simulados</span></div>
+<div class="metric"><span>Pérdida estimada si saltan todos los stops</span><b id="riskTotal">$0.00</b><span>Modelo orientativo; la pérdida puede ser mayor</span></div>
 </div>
 <div class="card">
 <h2>Reglas del simulador · crecimiento con control de pérdidas</h2>
@@ -44,7 +45,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <p><b>Antes de entrar:</b> liquidez suficiente, presión de compras, tendencia moderadamente positiva y dos revisiones consecutivas favorables. Se revisa el mercado aproximadamente cada 15 segundos mientras la página esté visible. No se fuerza una operación.</p>
 <p><b>Salidas hipotéticas:</b> stop por caída del precio del 9%; objetivo de <b>+25% de beneficio neto estimado</b>; seguimiento de ganadoras después de alcanzar +14% neto; y límite de mantenimiento de <b>6 horas</b>. Ya no se venden posiciones automáticamente a los 2 minutos.</p>
 <p><b>Costos estimados:</b> 2.2% del valor más $0.05 MXN por cada compra o venta. No son cotizaciones ejecutables. Con posiciones pequeñas, el punto de equilibrio exige una subida considerable. Las ganancias que queden en la caja virtual se reinvierten automáticamente.</p>
-<p><b>Protecciones:</b> reserva intocable para nuevas entradas, pausa de nuevas entradas con caída estimada del 5% diario, y 15 minutos de descanso antes de volver a comprar el mismo token vendido.</p>
+<p><b>Protecciones:</b> reserva intocable para nuevas entradas, máximo 4.5% del patrimonio de riesgo agregado estimado si se ejecutaran todos los stops a sus precios objetivo, pausa de nuevas entradas con caída estimada del 5% diario y 15 minutos antes de recomprar un token vendido. Los gaps de precio pueden superar todos estos límites.</p>
 <p>Al acumular al menos <b>$1,000 MXN de ganancias netas realizadas no retiradas</b>, y si la caja lo permite, registra un <b>retiro exclusivamente virtual</b> a Bitso. No mueve tokens ni dinero real.</p>
 </div>
 <div class="card"><h2>Direcciones adicionales para observar</h2><p class="muted">El motor también analiza hasta 75 perfiles de Solana procedentes de tres fuentes públicas de DexScreener (perfiles recientes, boosts recientes y boosts destacados). Estas listas no son una muestra imparcial: algunos tokens han pagado para aparecer destacados. Si quieres seguir un token específico, añade su mint público.</p>
@@ -61,7 +62,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 'use strict';
 const $=id=>document.getElementById(id);
 const KEY='solana-paper-growth-v5-20261027';
-const START=100,RESERVE=30,MAX_POSITIONS=10,MAX_STAKE=.085,RISK=.015,STOP=.09,TAKE=.25,TRAIL=.08,ARM=.14,DAILY=.05;
+const START=100,RESERVE=30,MAX_POSITIONS=10,MAX_STAKE=.085,RISK=.015,MAX_TOTAL_STOP_RISK=.045,STOP=.09,TAKE=.25,TRAIL=.08,ARM=.14,DAILY=.05;
 const POLL_MS=15000,COOLDOWN_MS=15*60000,MAX_HOLD_HOURS=6,MIN_STAKE=5,MAX_NEW_PER_SCAN=3;
 const ROUND_COST=.022,GAS=.05,MAX_AGE_MS=7*86400000;
 let running=false,busy=false,fx=null,lastPrices={},lastReview=0,summary='Sin evaluación de mercado.',diagnostics='Todavía no se ha realizado una consulta.',recentScans=[],confirmations=new Map();
@@ -78,6 +79,8 @@ function date(t){return new Date(t).toLocaleString('es-MX',{dateStyle:'short',ti
 function equity(){return data.cash+data.open.reduce((acc,p)=>acc+(lastPrices[p.mint]?.price>0&&lastPrices[p.mint].pair===p.pair&&fx?Math.max(0,p.qty*lastPrices[p.mint].price*fx.rate*(1-ROUND_COST)-GAS):p.cost),0)}
 function realizedAndUnrealized(){return equity()+data.paid-START}
 function exitValue(qty,price,rate){return Math.max(0,qty*price*rate*(1-ROUND_COST)-GAS)}
+function stopLossIfTriggered(p){const rate=num(p.entryFx)||fx?.rate;if(!rate)return p.cost;return Math.max(0,p.cost-exitValue(p.qty,p.entryPrice*(1-STOP),rate))}
+function riskExposure(){return data.open.reduce((acc,p)=>acc+stopLossIfTriggered(p),0)}
 function record(event){data.events.unshift(event);data.events=data.events.slice(0,400)}
 function render(){
 $('scan-summary').textContent=summary;
@@ -87,7 +90,7 @@ $('diagnostics').innerHTML=diagnostics;
 const eq=equity();$('equity').textContent='$'+money(eq);$('cash').textContent='$'+money(data.cash);
 $('pnl').textContent=(realizedAndUnrealized()>=0?'+':'')+'$'+money(realizedAndUnrealized());
 $('positions').textContent=data.open.length+' / '+MAX_POSITIONS;$('payouts').textContent='$'+money(data.paid);
-const total=Math.max(0,eq+data.paid);let level=START;while(level*2<=total&&level<1e10)level*=2;const nextGoal=level*2;$('goal').textContent='$'+money(nextGoal);$('progress').textContent=Math.max(0,Math.min(100,(total-level)/(nextGoal-level)*100)).toFixed(1)+'%';
+const total=Math.max(0,eq+data.paid);let level=START;while(level*2<=total&&level<1e10)level*=2;const nextGoal=level*2;$('goal').textContent='$'+money(nextGoal);$('progress').textContent=Math.max(0,Math.min(100,(total-level)/(nextGoal-level)*100)).toFixed(1)+'%';$('riskTotal').textContent='$'+money(riskExposure());
 $('updated').textContent=data.lastCheck?date(data.lastCheck):'—';
 $('state').textContent=busy?'Consultando fuentes de mercado…':running?(data.haltDay===data.day?'ACTIVA · entradas PAUSADAS por pérdida diaria':'ACTIVA · solo con esta página visible'):'DETENIDA · simulación local';
 $('start').disabled=running;$('stop').disabled=!running;
@@ -223,13 +226,16 @@ return {mints:unique,byMint,sources:perFeed,failures:[...failures,...lookupFailu
 function openTrade(mint,p,rate){
 if(data.open.some(t=>t.mint===mint)||data.open.length>=MAX_POSITIONS||(data.cooldowns[mint]&&Date.now()-data.cooldowns[mint]<COOLDOWN_MS))return false;
 const usable=data.cash-RESERVE,eq=equity(),slots=Math.max(1,MAX_POSITIONS-data.open.length),riskBudget=eq*RISK;
-const stake=Math.min(usable/slots,eq*MAX_STAKE,riskBudget/(STOP+2*ROUND_COST+2*GAS/MIN_STAKE));
+const remainingRisk=eq*MAX_TOTAL_STOP_RISK-riskExposure();
+const stopFactor=(1-STOP)*(1-ROUND_COST)/(1+ROUND_COST);
+const maxStakeRisk=(remainingRisk-GAS*(1+stopFactor))/(1-stopFactor);
+const stake=Math.min(usable/slots,eq*MAX_STAKE,riskBudget/(STOP+2*ROUND_COST+2*GAS/MIN_STAKE),maxStakeRisk);
 const price=num(p.priceUsd);
 if(!price||!Number.isFinite(stake)||stake<MIN_STAKE||!p.pairAddress||!Number.isFinite(rate)||rate<=0)return false;
 const qty=(stake-GAS)/(price*rate*(1+ROUND_COST));
 if(!Number.isFinite(qty)||qty<=0||data.cash-stake<RESERVE-.000001)return false;
 data.cash-=stake;
-data.open.push({mint,pair:p.pairAddress,symbol:String(p.baseToken?.symbol||'?').slice(0,30),opened:Date.now(),cost:stake,qty,entryPrice:price,peak:price});
+data.open.push({mint,pair:p.pairAddress,symbol:String(p.baseToken?.symbol||'?').slice(0,30),opened:Date.now(),cost:stake,qty,entryPrice:price,entryFx:rate,peak:price});
 confirmations.delete(mint);
 record({t:Date.now(),type:'COMPRA SIMULADA',symbol:p.baseToken?.symbol,amount:stake});
 return true
