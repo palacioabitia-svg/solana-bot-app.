@@ -130,63 +130,65 @@ throw Error('No fue posible consultar USD/MXN: '+errors.join(' | '));
 function pairsFor(token,all){const valid=all.filter(p=>p.chainId==='solana'&&p.baseToken?.address===token&&num(p.priceUsd)>0&&num(p.liquidity?.usd)>0);
 valid.sort((a,b)=>(num(b.liquidity?.usd)||0)-(num(a.liquidity?.usd)||0));return valid[0]||null}
 function inspectSignal(p){
-if(!p)return {ok:false,reason:'Sin par de mercado o precio'};
-const q={liquidity:num(p.liquidity?.usd),vol24:num(p.volume?.h24),vol5:num(p.volume?.m5),m5:num(p.priceChange?.m5),h1:num(p.priceChange?.h1),h24:num(p.priceChange?.h24),buys:num(p.txns?.m5?.buys),sells:num(p.txns?.m5?.sells),age:num(p.pairCreatedAt)};
-if(Object.values(q).some(v=>v===null))return {ok:false,reason:'Datos de mercado incompletos'};
-const ageH=(Date.now()-q.age)/3600000;
-if(ageH<1)return {ok:false,reason:'Par demasiado reciente (< 1 h)'};
-if(ageH>720)return {ok:false,reason:'Par anterior a 30 días'};
-if(q.liquidity<30000)return {ok:false,reason:'Liquidez menor a USD 30,000'};
-if(q.vol5<700||q.vol24<15000)return {ok:false,reason:'Volumen insuficiente'};
-const rot=q.vol24/q.liquidity;
-if(rot<.3||rot>25)return {ok:false,reason:'Rotación anómala del volumen'};
-if(q.m5<1||q.m5>12)return {ok:false,reason:'Impulso 5 min inadecuado'};
-if(q.h1<4||q.h1>40)return {ok:false,reason:'Impulso 1 h inadecuado'};
-if(q.h24< -15||q.h24>130)return {ok:false,reason:'Movimiento diario excesivo'};
-if(q.buys+q.sells<20||q.sells<5)return {ok:false,reason:'Transacciones insuficientes'};
-if(q.buys<q.sells*1.2)return {ok:false,reason:'Compras no superan suficiente a ventas'};
+if(!p)return {ok:false,score:0,reason:'Sin cotización válida'};
+const q={liq:num(p.liquidity?.usd),vol24:num(p.volume?.h24),vol5:num(p.volume?.m5),m5:num(p.priceChange?.m5),h1:num(p.priceChange?.h1),h24:num(p.priceChange?.h24),buys:num(p.txns?.m5?.buys),sells:num(p.txns?.m5?.sells),created:num(p.pairCreatedAt)};
+if(Object.values(q).some(v=>v===null))return {ok:false,score:0,reason:'Datos incompletos'};
+const age=(Date.now()-q.created)/3600000;
+let reason='';
+if(age<.25)reason='Menos de 15 min de antigüedad';
+else if(age>720)reason='Más de 30 días';
+else if(q.liq<18000)reason='Liquidez inferior a USD 18,000';
+else if(q.vol5<300||q.vol24<3500)reason='Volumen insuficiente';
+else if(q.vol24/q.liq<.12||q.vol24/q.liq>35)reason='Rotación anómala';
+else if(q.m5<.3||q.m5>17)reason='Tendencia de 5 min no favorable';
+else if(q.h1<1||q.h1>70)reason='Tendencia de 1 h no favorable';
+else if(q.h24< -35||q.h24>220)reason='Tendencia diaria excesiva';
+else if(q.buys+q.sells<10||q.sells<3)reason='Pocas ventas para evaluar salida';
+else if(q.buys<q.sells*1.08)reason='Presión compradora insuficiente';
 const buyRatio=q.buys/Math.max(1,q.sells);
 const score=Math.min(100,Math.round(
-(Math.min(1,q.liquidity/120000)*25)+
-(Math.min(1,q.vol5/7000)*20)+
-(Math.min(2.5,buyRatio)/2.5*25)+
-(Math.min(1,q.m5/7)*15)+
-(Math.min(1,q.h1/20)*15)));
-return {ok:true,score,reason:'Señales de mercado favorables (seguridad aún sin verificar)'}
+Math.min(1,q.liq/90000)*22+
+Math.min(1,q.vol5/4200)*20+
+Math.min(2.2,buyRatio)/2.2*22+
+Math.min(1,q.m5/7)*18+
+Math.min(1,q.h1/18)*14+
+Math.min(1,age/24)*4));
+if(!reason&&score<40)reason='Puntuación de actividad inferior al mínimo';
+return {ok:!reason,score,reason:reason||'Actividad favorable; seguridad on-chain no auditada'}
 }
 function signal(p){return inspectSignal(p).ok}
 function reportMarket(m){
 const reasons={},rejected=[],qualifying=[],wait=[],now=Date.now(),seen=new Set();
+const leaderboard=[];
 for(const mint of m.mints){
 const p=m.byMint[mint],result=inspectSignal(p);
+if(p)leaderboard.push({symbol:String(p.baseToken?.symbol||p.baseToken?.name||'?').slice(0,22),liq:num(p.liquidity?.usd)||0,m5:num(p.priceChange?.m5),buys:num(p.txns?.m5?.buys),sells:num(p.txns?.m5?.sells),reason:result.ok?'Señal '+result.score+'/100':result.reason,score:result.score});
 if(!result.ok){
 reasons[result.reason]=(reasons[result.reason]||0)+1;
 confirmations.delete(mint);
 if(p&&rejected.length<5)rejected.push({symbol:String(p.baseToken?.symbol||'?').slice(0,28),reason:result.reason});
-continue;
+continue
 }
 seen.add(mint);
 const quote=num(p.priceUsd),pair=p.pairAddress,old=confirmations.get(mint);
-const stable=old&&old.pair===pair&&now-old.last<=120000&&quote>=old.price*.98&&quote<=old.price*1.15;
-const state=stable?{count:Math.min(4,old.count+1),first:old.first,last:now,price:quote,pair}:
-{count:1,first:now,last:now,price:quote,pair};
+const stable=old&&old.pair===pair&&now-old.last<=120000&&quote>=old.price*.995&&quote<=old.price*1.22;
+const state=stable?{count:Math.min(5,old.count+1),first:old.first,last:now,price:quote,pair}:{count:1,first:now,last:now,price:quote,pair};
 confirmations.set(mint,state);
-if(state.count>=2&&now-state.first>=10000){
-qualifying.push({mint,p,score:result.score});
-}else wait.push(mint);
+if((result.score>=72&&state.count>=1)||(state.count>=2&&now-state.first>=10000))qualifying.push({mint,p,score:result.score});
+else wait.push(mint)
 }
 for(const [mint,state] of confirmations){if(now-state.last>180000||(!seen.has(mint)&&!data.open.some(p=>p.mint===mint)))confirmations.delete(mint)}
 qualifying.sort((a,b)=>b.score-a.score||(num(b.p.liquidity?.usd)||0)-(num(a.p.liquidity?.usd)||0));
+topCandidates=leaderboard.sort((a,b)=>b.score-a.score||b.liq-a.liq).slice(0,12);
 const counts=Object.entries(reasons).sort((a,b)=>b[1]-a[1]).slice(0,8);
-const feed=m.sources.map(f=>esc(f.label)+': <b>'+f.n+'</b>'+(f.error?' (no disponible)':'')).join(' · ');
-diagnostics='<p><b>Universo:</b> '+m.mints.length+' tokens examinados · '+Object.keys(m.byMint).length+' con par válido · <b>'+qualifying.length+' con señal confirmada</b> · '+wait.length+' en primera revisión.</p>'+
+const feed=m.sources.map(f=>esc(f.label)+': '+f.n+(f.error?' (sin respuesta)':'')).join(' · ');
+diagnostics='<p><b>Universo:</b> '+m.mints.length+' tokens · '+Object.keys(m.byMint).length+' pares · <b>'+qualifying.length+' señales</b> · '+wait.length+' esperando segunda lectura.</p>'+
 '<p><b>Fuentes:</b> '+feed+'</p>'+
-(qualifying.length===0?'<p class="amber">No se abre operación sin dos lecturas favorables consecutivas; las pérdidas por forzar actividad son un riesgo.</p>':
-'<p>Señales ordenadas por actividad, volumen y presión compradora. No representan una predicción ni auditoría de sellabilidad.</p>')+
-'<p><b>Descartes:</b> '+(counts.length?counts.map(([why,n])=>'<span style="display:inline-block;margin:3px 6px 3px 0;padding:5px 8px;border-radius:7px;background:#151820">'+esc(why)+': <b>'+n+'</b></span>').join(''):'Ninguno')+'</p>'+
-(rejected.length?'<p><b>Ejemplos:</b> '+rejected.map(x=>esc(x.symbol)+' ('+esc(x.reason)+')').join(' · ')+'</p>':'')+
-(m.failures.length?'<p class="amber"><b>Fuentes con errores:</b> '+m.failures.map(esc).join(' · ')+'</p>':'')+
-'<p class="amber">No hay aprobación de seguridad on-chain ni prueba real de venta. Las fuentes de boosts pueden contener promociones pagadas.</p>';
+(qualifying.length===0?'<p class="amber">No se encontró aún una señal que cumpla los filtros. Sin posiciones nuevas para evitar operaciones artificiales.</p>':'<p>Señales de actividad ordenadas por puntuación; esto no acredita seguridad ni rentabilidad.</p>')+
+'<p><b>Motivos de descarte:</b> '+(counts.length?counts.map(([why,n])=>'<span style="display:inline-block;margin:3px 6px 3px 0;padding:5px 8px;border-radius:7px;background:#151820">'+esc(why)+': <b>'+n+'</b></span>').join(''):'Ninguno')+'</p>'+
+(rejected.length?'<p><b>Ejemplos descartados:</b> '+rejected.map(x=>esc(x.symbol)+' ('+esc(x.reason)+')').join(' · ')+'</p>':'')+
+(m.failures.length?'<p class="amber"><b>Fuentes parciales:</b> '+m.failures.map(esc).join(' · ')+'</p>':'')+
+'<p class="amber"><b>Solo simulación.</b> Las búsquedas y anuncios no son recomendaciones; pueden incluir tokens promocionados y no se ha verificado que puedan venderse.</p>';
 return qualifying
 }
 async function market(){
