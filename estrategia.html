@@ -37,7 +37,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <div class="card">
 <h2>Reglas automáticas de riesgo</h2>
 <p>Capital de partida: <b>100 MXN</b>. Reserva: <b>30 MXN</b>. Posición máxima: <b>10% del patrimonio</b>. Riesgo objetivo: <b>2%</b> por operación. Hasta <b>2 posiciones</b>.</p>
-<p>Salida hipotética por caída del precio de referencia de <b>12%</b>, objetivo de <b>40%</b> o trailing stop de <b>15%</b> después de superar <b>20%</b>. Duración máxima de <b>24 horas</b>. Pausa por caída estimada diaria del patrimonio de <b>5%</b>.</p>
+<p>Pausa de nuevas entradas durante 6 horas después de cerrar un token. Salida hipotética por caída del precio de referencia de <b>12%</b>, objetivo de <b>40%</b> o trailing stop de <b>15%</b> después de superar <b>20%</b>. Duración máxima de <b>24 horas</b>. Pausa por caída estimada diaria del patrimonio de <b>5%</b>.</p>
 <p>Costos conservadores <i>supuestos</i>: <b>2.2%</b> del importe en cada lado (comisiones, spread y deslizamiento combinados) + <b>0.05 MXN</b> por cada lado. No son tarifas reales verificadas. Una salida puede fallar incluso con stop configurado.</p>
 <p>Si las ganancias realizadas netas no retiradas alcanzan <b>1,000 MXN</b> y hay caja suficiente por encima de la reserva, registra una <b>transferencia exclusivamente virtual</b> a Bitso. No solicita firmas ni claves.</p>
 </div>
@@ -62,8 +62,8 @@ const money=n=>Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximum
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=v=>v===null||v===undefined||v===''?null:(Number.isFinite(Number(v))?Number(v):null);
 const isMint=v=>/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v);
-const initial=()=>({cash:START,open:[],events:[],watch:[],paid:0,realizedNet:0,day:new Date().toISOString().slice(0,10),dayStart:START,lastCheck:0});
-function load(){try{const v=JSON.parse(localStorage.getItem(KEY));if(!v||!Number.isFinite(v.cash)||!Array.isArray(v.open)||!Array.isArray(v.events)||!Array.isArray(v.watch))return initial();return v}catch{return initial()}}
+const initial=()=>({cash:START,open:[],events:[],watch:[],paid:0,realizedNet:0,day:new Date().toISOString().slice(0,10),dayStart:START,lastCheck:0,cooldowns:{},haltDay:''});
+function load(){try{const v=JSON.parse(localStorage.getItem(KEY));if(!v||!Number.isFinite(v.cash)||!Array.isArray(v.open)||!Array.isArray(v.events)||!Array.isArray(v.watch))return initial();v.cooldowns=v.cooldowns||{};v.haltDay=v.haltDay||'';return v}catch{return initial()}}
 let data=load();
 function persist(){try{localStorage.setItem(KEY,JSON.stringify(data))}catch(e){$('lastError').textContent='No se pudo guardar la simulación en este navegador: '+e.message}}
 function date(t){return new Date(t).toLocaleString('es-MX',{dateStyle:'short',timeStyle:'short'})}
@@ -77,7 +77,7 @@ const eq=equity();$('equity').textContent='$'+money(eq);$('cash').textContent='$
 $('pnl').textContent=(realizedAndUnrealized()>=0?'+':'')+'$'+money(realizedAndUnrealized());
 $('positions').textContent=data.open.length+' / '+MAX_POSITIONS;$('payouts').textContent='$'+money(data.paid);
 $('updated').textContent=data.lastCheck?date(data.lastCheck):'—';
-$('state').textContent=busy?'Consultando fuentes de mercado…':running?'ACTIVA · solo con esta página visible':'DETENIDA · simulación local';
+$('state').textContent=busy?'Consultando fuentes de mercado…':running?(data.haltDay===data.day?'ACTIVA · entradas PAUSADAS por pérdida diaria':'ACTIVA · solo con esta página visible'):'DETENIDA · simulación local';
 $('start').disabled=running;$('stop').disabled=!running;
 $('watchlist').innerHTML=data.watch.length?data.watch.map((m,i)=>'<p><code>'+esc(m)+'</code> <button class="secondary mini" data-remove="'+i+'">Quitar</button></p>').join(''):'<p>No hay tokens adicionales.</p>';
 $('open').innerHTML=data.open.length?'<table><thead><tr><th>Token</th><th>Invertido</th><th>Valor salida estimado</th><th>PnL</th></tr></thead><tbody>'+
@@ -116,7 +116,7 @@ if(!Array.isArray(raw))throw Error('Pares DexScreener incompletos');
 const byMint={};for(const token of mints){const p=pairsFor(token,raw);if(p)byMint[token]=p}
 return {mints,byMint}}
 function openTrade(mint,p,rate){
-if(data.open.some(t=>t.mint===mint)||data.open.length>=MAX_POSITIONS)return;
+if(data.open.some(t=>t.mint===mint)||data.open.length>=MAX_POSITIONS||(data.cooldowns[mint]&&Date.now()-data.cooldowns[mint]<6*3600000))return;
 const usable=data.cash-RESERVE,eq=equity(),lossBudget=eq*RISK;
 const stake=Math.min(usable,eq*MAX_STAKE,lossBudget/(STOP+ROUND_COST*2+GAS*2/10));
 const price=num(p.priceUsd);
@@ -129,7 +129,7 @@ record({t:Date.now(),type:'COMPRA SIMULADA',symbol:p.baseToken?.symbol,amount:st
 }
 function closeTrade(p,price,rate,reason){
 const proceeds=exitValue(p.qty,price,rate);const pnl=proceeds-p.cost;
-data.cash+=proceeds;data.realizedNet+=pnl;data.open=data.open.filter(o=>o!==p);
+data.cash+=proceeds;data.realizedNet+=pnl;data.cooldowns[p.mint]=Date.now();data.open=data.open.filter(o=>o!==p);
 record({t:Date.now(),type:'VENTA SIMULADA · '+reason,symbol:p.symbol,amount:proceeds,pnl});
 }
 function maybeVirtualPayout(){
@@ -141,7 +141,7 @@ record({t:Date.now(),type:'RETIRO VIRTUAL BITSO',amount:payable,pnl:0});
 }}
 function refreshDay(){
 const today=new Date().toISOString().slice(0,10);
-if(data.day!==today){data.day=today;data.dayStart=equity();record({t:Date.now(),type:'NUEVA JORNADA',amount:data.dayStart})}
+if(data.day!==today){data.day=today;data.dayStart=equity();data.haltDay='';record({t:Date.now(),type:'NUEVA JORNADA',amount:data.dayStart})}
 }
 async function tick(){
 if(busy||document.hidden)return;busy=true;$('lastError').textContent='';render();
@@ -161,8 +161,8 @@ else if(pos.peak>=pos.entryPrice*(1+ARM)&&price<=pos.peak*(1-TRAIL))closeTrade(p
 else if(hours>=24)closeTrade(pos,price,rate,'TIEMPO');
 }
 maybeVirtualPayout();
-if(equity()<=data.dayStart*(1-DAILY)){running=false;$('lastError').textContent='Límite diario de caída estimada (5%) alcanzado. Simulación pausada: no se abrirán nuevas posiciones.'}
-if(running||manualTick){
+if(equity()<=data.dayStart*(1-DAILY)){data.haltDay=data.day;$('lastError').textContent='Caída diaria estimada ≥ 5%: nuevas entradas bloqueadas; salidas simuladas siguen vigilándose mientras la página permanezca visible.'}
+if(running&&data.haltDay!==data.day){
 for(const mint of m.mints){
 if(data.open.length>=MAX_POSITIONS)break;
 const p=m.byMint[mint];
@@ -174,10 +174,9 @@ summary='Última revisión: '+n+' tokens cotizados, '+candidates+' señales de m
 persist();
 }catch(e){summary='Revisión fallida; los datos no están actualizados.';$('lastError').textContent='Revisión cancelada; sin nuevas operaciones: '+e.message+'. No se inventaron precios ni tipo de cambio.'}
 finally{busy=false;render()}}
-let manualTick=false;
-$('start').onclick=()=>{running=true;manualTick=false;render();tick()};
+$('start').onclick=()=>{running=true;render();tick()};
 $('stop').onclick=()=>{running=false;render()};
-$('once').onclick=async()=>{manualTick=false;await tick()};
+$('once').onclick=async()=>{await tick()};
 $('add').onclick=()=>{const m=$('mint').value.trim();if(!isMint(m)){alert('Introduce un mint público válido de Solana');return}if(data.watch.includes(m)){alert('Ya está en observación');return}if(data.watch.length>=10){alert('Máximo 10 mints adicionales');return}data.watch.push(m);$('mint').value='';persist();render()};
 $('watchlist').onclick=e=>{const btn=e.target.closest('button[data-remove]');if(!btn)return;const i=Number(btn.dataset.remove);if(Number.isInteger(i)&&i>=0&&i<data.watch.length){data.watch.splice(i,1);persist();render()}};
 $('reset').onclick=()=>{if(!confirm('¿Borrar todas las posiciones, resultados, observación y retiros VIRTUALES?'))return;running=false;lastPrices={};data=initial();persist();render();$('lastError').textContent='Simulación reiniciada.'};
