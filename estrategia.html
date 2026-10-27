@@ -22,9 +22,9 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <p class="amber"><b>MODO DEMOSTRACIÓN. No usa SOL, no opera en tu wallet y no realiza retiros.</b> Solo utiliza precios públicos de mercado. Las salidas son hipotéticas: un token real podría impedir vender o ejecutarse mucho peor.</p>
 <div class="card"><h2>Control de simulación</h2>
 <button id="start">Iniciar simulación automática</button><button id="stop" class="secondary">Detener</button><button id="once" class="secondary">Ejecutar revisión ahora</button>
-<p id="state" class="muted">Detenida. Los datos guardados solo están en este navegador.</p>
+<p id="state" class="muted">Detenida. Los datos guardados solo están en este navegador.</p><p id="lastDecision" class="amber">Última decisión: sin escanear.</p>
 <p class="note">Cuando está activa, consulta aproximadamente cada <b>15 segundos (4 revisiones por minuto)</b> solo con esta página abierta y visible. Puede abrir posiciones virtuales cuando observa un precio que se mueve al alza entre consultas y cumple los filtros de actividad, riesgo y capital. No opera por obligación. Al cerrarla deja de trabajar. No es un bot de ejecución permanente.</p>
-<p id="source" class="note">Tipo de cambio USD/MXN: pendiente de consulta.</p><p id="scan-summary" class="note">Sin evaluación de mercado.</p><p id="pace" class="note">Revisiones y operaciones recientes: 0.</p><p class="note">Scalping: busca movimientos cortos cada 15 segundos; solo considera compra si el precio consultado cambió entre revisiones. DexScreener no proporciona cotizaciones ejecutables ni garantiza una actualización cada 15 segundos.</p><p class="note" id="sources-status">Buscando fuentes de mercado…</p><div id="diagnostics" class="note">Pulsa «Iniciar simulación automática» para consultar el mercado.</div><div id="candidates" class="note" style="overflow-x:auto"></div>
+<p id="source" class="note">Tipo de cambio USD/MXN: pendiente de consulta.</p><p id="scan-summary" class="note">Sin evaluación de mercado.</p><p id="pace" class="note">Revisiones y operaciones recientes: 0.</p><p class="note">Scalping: busca movimientos cortos cada 15 segundos; solo considera compra si el precio consultado cambió entre revisiones. DexScreener no proporciona cotizaciones ejecutables ni garantiza una actualización cada 15 segundos.</p><p class="note" id="sources-status">Buscando fuentes de mercado…</p><div id="diagnostics" class="note">Pulsa «Iniciar simulación automática» para consultar el mercado.</div><div id="candidates" class="note" style="overflow-x:auto"></div><details style="margin-top:14px"><summary>Ver las últimas decisiones del bot</summary><div id="decisions" class="note">Sin decisiones registradas.</div></details>
 </div>
 <div class="metrics" aria-label="Resultados simulados">
 <div class="metric"><span>Capital inicial</span><b>$100.00</b><span>MXN simulados</span></div>
@@ -68,10 +68,11 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 'use strict';
 const $=id=>document.getElementById(id);
 const KEY='solana-paper-scalp-v7-20261027';
+const RUN_KEY='solana-scalp-live-foreground-v8';
 const START=100,RESERVE=30,MAX_POSITIONS=10,MAX_STAKE=.085,RISK=.015,MAX_TOTAL_STOP_RISK=.045,STOP=.07,TAKE=.06,TRAIL=.035,ARM=.04,DAILY=.05,MINUTE_GOAL=10;
 const POLL_MS=15000,COOLDOWN_MS=90*1000,MAX_HOLD_HOURS=1.5,MIN_STAKE=5,MAX_NEW_PER_SCAN=4;
 const ROUND_COST=.022,GAS=.05,MAX_AGE_MS=7*86400000;
-let running=false,busy=false,fx=null,lastPrices={},lastReview=0,summary='Sin evaluación de mercado.',diagnostics='Todavía no se ha realizado una consulta.',recentScans=[],confirmations=new Map(),observedPrices=new Map(),discoveryCache=null,discoveryAt=0,topCandidates=[];
+let running=false,busy=false,fx=null,lastPrices={},lastReview=0,summary='Sin evaluación de mercado.',diagnostics='Todavía no se ha realizado una consulta.',recentScans=[],confirmations=new Map(),observedPrices=new Map(),discoveryCache=null,discoveryAt=0,topCandidates=[],decisionHistory=[],lastDecision='Aún no hay decisiones';
 const money=n=>Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
 const signedMoney=n=>(n<0?'-$':'+$')+money(Math.abs(n));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -89,8 +90,12 @@ function exitValue(qty,price,rate){return Math.max(0,qty*price*rate*(1-ROUND_COS
 function stopLossIfTriggered(p){const rate=num(p.entryFx)||fx?.rate;if(!rate)return p.cost;return Math.max(0,p.cost-exitValue(p.qty,p.entryPrice*(1-STOP),rate))}
 function riskExposure(){return data.open.reduce((acc,p)=>acc+stopLossIfTriggered(p),0)}
 function record(event){data.events.unshift(event);data.events=data.events.slice(0,400)}
+function decision(status,message){lastDecision=status+' · '+message;decisionHistory.unshift({t:Date.now(),status,message});decisionHistory=decisionHistory.slice(0,24)}
+function saveRunning(){try{localStorage.setItem(RUN_KEY,running?'1':'0')}catch{}}
 function render(){
 $('scan-summary').textContent=summary;
+$('lastDecision').textContent='Última decisión: '+lastDecision;
+$('decisions').innerHTML=decisionHistory.length?decisionHistory.map(x=>'<p><small>'+date(x.t)+'</small> <b>'+esc(x.status)+'</b> · '+esc(x.message)+'</p>').join(''):'Sin decisiones registradas.';
 const cutoff=Date.now()-60000;recentScans=recentScans.filter(t=>t>=cutoff);const minuteEvents=data.events.filter(e=>e.t>=cutoff&&/SIMULADA/.test(e.type));
 const closedTrades=data.events.filter(e=>e.type.startsWith('VENTA SIMULADA')&&Number.isFinite(e.pnl));
 const minutePnl=closedTrades.filter(e=>e.t>=cutoff).reduce((n,e)=>n+e.pnl,0);
@@ -355,19 +360,23 @@ if(openTrade(item.mint,item.p,rate))opened++;
 }
 }
 data.lastCheck=now;lastReview=now;recentScans.push(now);
+const riskMsg=priceGap?'No hay cotización del par de una posición':riskExit?'Se cerró posición por riesgo':data.haltDay===data.day?'Pérdida diaria máxima alcanzada':data.open.length>=MAX_POSITIONS?'Máximo de posiciones en uso':data.cash-RESERVE<MIN_STAKE?'Capital disponible insuficiente':riskExposure()>equity()*MAX_TOTAL_STOP_RISK-.75?'Presupuesto de riesgo agotado':'Sin señal de precio/flujo o en espera de enfriamiento';
+decision(opened>0?'ENTRADA SIMULADA':riskExit?'SALIDA POR RIESGO':qualifying.length?'SEÑAL SIN ENTRADA':'SIN SEÑAL',opened>0?opened+' posiciones virtuales abiertas tras revisar '+n+' pares.':riskMsg+'; '+n+' pares consultados, '+qualifying.length+' señales nuevas.');
 summary='Última revisión: '+n+' tokens cotizados, '+qualifying.length+' señales confirmadas de mercado, '+opened+' nuevas posiciones virtuales. '+(priceGap?'Entradas bloqueadas por falta de cotización. ':riskExit?'Entradas pausadas en esta revisión tras salida por riesgo. ':'')+date(now)+'. Las señales no equivalen a verificación de seguridad.';
 if(opened===0&&qualifying.length>0&&running){let why=priceGap?'Falta la cotización de una posición existente':riskExit?'Salida por riesgo detectada en esta revisión':data.haltDay===data.day?'Límite de pérdida diaria activado':data.open.length>=MAX_POSITIONS?'Diez posiciones ocupadas':data.cash-RESERVE<MIN_STAKE?'Reserva y caja insuficiente':riskExposure()>=equity()*MAX_TOTAL_STOP_RISK-.75?'Presupuesto conjunto de riesgo agotado':'Pausa del token, tamaño mínimo o cupos de entrada';diagnostics+='<p class="amber"><b>Sin nueva compra:</b> '+esc(why)+'. Una señal favorable no obliga a entrar.</p>';}
 persist();
-}catch(e){summary='Revisión fallida; los datos no están actualizados.';diagnostics='<p class="red">Consulta fallida: '+esc(e.message)+'. No se intentaron nuevas compras simuladas.</p>';$('lastError').textContent='Revisión cancelada; sin nuevas operaciones: '+e.message+'. No se inventaron precios ni tipo de cambio.'}
+}catch(e){decision('ERROR DE DATOS',String(e.message||e).slice(0,280));summary='Revisión fallida; los datos no están actualizados.';diagnostics='<p class="red">Consulta fallida: '+esc(e.message)+'. No se intentaron nuevas compras simuladas.</p>';$('lastError').textContent='Revisión cancelada; sin nuevas operaciones: '+e.message+'. No se inventaron precios ni tipo de cambio.'}
 finally{busy=false;render()}}
-$('start').onclick=()=>{running=true;render();tick()};
-$('stop').onclick=()=>{running=false;render()};
+$('start').onclick=()=>{running=true;saveRunning();decision('ACTIVADO','Reanudará análisis cada 15 s mientras la página esté visible.');render();tick()};
+$('stop').onclick=()=>{running=false;saveRunning();decision('DETENIDO','No habrá nuevas entradas mientras esté detenido.');render()};
 $('once').onclick=async()=>{await tick()};
 $('add').onclick=()=>{const m=$('mint').value.trim();if(!isMint(m)){alert('Introduce un mint público válido de Solana');return}if(data.watch.includes(m)){alert('Ya está en observación');return}if(data.watch.length>=10){alert('Máximo 10 mints adicionales');return}data.watch.push(m);$('mint').value='';persist();render()};
 $('watchlist').onclick=e=>{const btn=e.target.closest('button[data-remove]');if(!btn)return;const i=Number(btn.dataset.remove);if(Number.isInteger(i)&&i>=0&&i<data.watch.length){data.watch.splice(i,1);persist();render()}};
-$('reset').onclick=()=>{if(!confirm('¿Borrar todas las posiciones, resultados, observación y retiros VIRTUALES?'))return;running=false;lastPrices={};data=initial();persist();render();$('lastError').textContent='Simulación reiniciada.'};
+$('reset').onclick=()=>{if(!confirm('¿Borrar todas las posiciones, resultados, observación y retiros VIRTUALES?'))return;running=false;saveRunning();lastPrices={};data=initial();persist();decision('REINICIO','Simulación reiniciada manualmente.');render();$('lastError').textContent='Simulación reiniciada.'};
 $('export').onclick=()=>{const rows=[['fecha','evento','token','importe_mxn','pnl_neto_mxn'],...data.events.slice().reverse().map(e=>[new Date(e.t).toISOString(),e.type,e.symbol||'',e.amount||0,e.pnl??''])];const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');const url=URL.createObjectURL(new Blob(['\ufeff',csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='solana-simulacion.csv';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)};
 setInterval(()=>{if(running&&!document.hidden)tick()},POLL_MS);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&running)tick()});
-render();
+try{running=localStorage.getItem(RUN_KEY)==='1'}catch{}
+if(running)decision('REANUDADO','Se retomó la simulación guardada. Solo se ejecuta con esta página visible.');
+render();if(running&&!document.hidden)tick();
 </script></body></html>
