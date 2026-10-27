@@ -220,22 +220,27 @@ if(pair)byMint[token]=pair;
 return {mints:unique,byMint,sources:perFeed,failures:[...failures,...lookupFailures]}}
 
 function openTrade(mint,p,rate){
-if(data.open.some(t=>t.mint===mint)||data.open.length>=MAX_POSITIONS||(data.cooldowns[mint]&&Date.now()-data.cooldowns[mint]<COOLDOWN_MS))return;
-const usable=data.cash-RESERVE,eq=equity(),lossBudget=eq*RISK;
-const stake=Math.min(usable,eq*MAX_STAKE,lossBudget/(STOP+ROUND_COST*2+GAS*2/10));
+if(data.open.some(t=>t.mint===mint)||data.open.length>=MAX_POSITIONS||(data.cooldowns[mint]&&Date.now()-data.cooldowns[mint]<COOLDOWN_MS))return false;
+const usable=data.cash-RESERVE,eq=equity(),slots=Math.max(1,MAX_POSITIONS-data.open.length),riskBudget=eq*RISK;
+const stake=Math.min(usable/slots,eq*MAX_STAKE,riskBudget/(STOP+2*ROUND_COST+2*GAS/MIN_STAKE));
 const price=num(p.priceUsd);
-if(!price||!Number.isFinite(stake)||stake<MIN_STAKE)return;
+if(!price||!Number.isFinite(stake)||stake<MIN_STAKE||!p.pairAddress||!Number.isFinite(rate)||rate<=0)return false;
 const qty=(stake-GAS)/(price*rate*(1+ROUND_COST));
-if(!Number.isFinite(qty)||qty<=0)return;
+if(!Number.isFinite(qty)||qty<=0||data.cash-stake<RESERVE-.000001)return false;
 data.cash-=stake;
 data.open.push({mint,pair:p.pairAddress,symbol:String(p.baseToken?.symbol||'?').slice(0,30),opened:Date.now(),cost:stake,qty,entryPrice:price,peak:price});
+confirmations.delete(mint);
 record({t:Date.now(),type:'COMPRA SIMULADA',symbol:p.baseToken?.symbol,amount:stake});
+return true
 }
 function closeTrade(p,price,rate,reason){
-const proceeds=exitValue(p.qty,price,rate);const pnl=proceeds-p.cost;
-data.cash+=proceeds;data.realizedNet+=pnl;data.cooldowns[p.mint]=Date.now();data.open=data.open.filter(o=>o!==p);
+const proceeds=exitValue(p.qty,price,rate);
+const pnl=proceeds-p.cost;
+data.cash+=proceeds;data.realizedNet+=pnl;data.cooldowns[p.mint]=Date.now();
+data.open=data.open.filter(o=>o!==p);confirmations.delete(p.mint);
 record({t:Date.now(),type:'VENTA SIMULADA · '+reason,symbol:p.symbol,amount:proceeds,pnl});
 }
+
 function maybeVirtualPayout(){
 const claim=data.realizedNet-data.paid;
 const payable=Math.min(claim,data.cash-RESERVE);
