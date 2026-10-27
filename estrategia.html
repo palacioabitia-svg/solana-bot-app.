@@ -88,13 +88,29 @@ $('history').innerHTML=data.events.length?'<div style="overflow-x:auto"><table><
 data.events.slice(0,80).map(e=>'<tr><td>'+date(e.t)+'</td><td>'+esc(e.type)+'</td><td>'+esc(e.symbol||'—')+'</td><td>$'+money(e.amount||0)+'</td><td>'+(e.pnl===undefined?'—':(e.pnl>=0?'+':'')+'$'+money(e.pnl))+'</td></tr>').join('')+'</tbody></table></div>':'Sin operaciones.';
 }
 async function json(url){const ctrl=new AbortController();const timeout=setTimeout(()=>ctrl.abort(),11000);try{const r=await fetch(url,{signal:ctrl.signal,headers:{Accept:'application/json'}});if(!r.ok)throw Error('HTTP '+r.status);return await r.json()}finally{clearTimeout(timeout)}}
-async function getFx(){const now=Date.now();if(fx&&now-fx.checked<15*60000)return fx;
+async function getFx(){
+const now=Date.now();
+if(fx&&now-fx.checked<60*60000)return fx;
+const errors=[];
+try{
 const response=await json('https://api.frankfurter.dev/v1/latest?base=USD&symbols=MXN');
-const rate=num(response?.rates?.MXN);const day=response?.date;const asof=day?Date.parse(day+'T00:00:00Z'):NaN;
-if(!rate||rate<5||rate>50||!Number.isFinite(asof)||now-asof>MAX_AGE_MS)throw Error('Tipo USD/MXN no disponible o demasiado antiguo');
-fx={rate,date:day,checked:now};
-$('source').textContent='USD/MXN: '+rate.toFixed(4)+' (referencia bancaria '+day+', no ejecutable). Fuente: Frankfurter.';
-return fx}
+const rate=num(response?.rates?.MXN),day=response?.date,asof=day?Date.parse(day+'T00:00:00Z'):NaN;
+if(!rate||rate<5||rate>50||!Number.isFinite(asof)||now-asof>MAX_AGE_MS)throw Error('Datos incompletos o antiguos');
+fx={rate,date:day,checked:now,source:'Frankfurter'};
+$('source').textContent='USD/MXN: '+rate.toFixed(4)+' (referencia del '+day+'; fuente Frankfurter; no ejecutable).';
+return fx;
+}catch(e){errors.push('Frankfurter: '+e.message)}
+try{
+const response=await json('https://open.er-api.com/v6/latest/USD');
+const rate=num(response?.rates?.MXN);
+const at=Date.parse(response?.time_last_update_utc||''),age=now-at;
+if(response?.result!=='success'||!rate||rate<5||rate>50||!Number.isFinite(at)||age>72*3600000||age< -24*3600000)throw Error('Datos incompletos o antiguos');
+fx={rate,date:new Date(at).toISOString().slice(0,10),checked:now,source:'ExchangeRate-API'};
+$('source').innerHTML='USD/MXN: '+rate.toFixed(4)+' (referencia del '+fx.date+'; no ejecutable). <a href="https://www.exchangerate-api.com/" target="_blank" rel="noopener noreferrer">Rates By Exchange Rate API</a>.';
+return fx;
+}catch(e){errors.push('ExchangeRate-API: '+e.message)}
+throw Error('No fue posible consultar USD/MXN: '+errors.join(' | '));
+}
 function pairsFor(token,all){const valid=all.filter(p=>p.chainId==='solana'&&p.baseToken?.address===token&&num(p.priceUsd)>0&&num(p.liquidity?.usd)>0);
 valid.sort((a,b)=>(num(b.liquidity?.usd)||0)-(num(a.liquidity?.usd)||0));return valid[0]||null}
 function inspectSignal(p){
