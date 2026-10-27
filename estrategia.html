@@ -286,7 +286,7 @@ async function tick(){
 if(busy||document.hidden)return;busy=true;$('lastError').textContent='';render();
 try{
 const rate=(await getFx()).rate;refreshDay();
-const m=await market(),now=Date.now(),prices={};let n=0,opened=0,priceGap=false;const qualifying=reportMarket(m);
+const m=await market(),now=Date.now(),prices={};let n=0,opened=0,priceGap=false,riskExit=false;const qualifying=reportMarket(m);
 for(const [mint,p] of Object.entries(m.byMint)){const price=num(p.priceUsd);if(price>0){prices[mint]={price,pair:p.pairAddress,at:now};n++}}
 lastPrices=prices;
 for(const pos of [...data.open]){
@@ -301,9 +301,9 @@ const liq=num(p.liquidity?.usd),oldLiq=num(pos.entryLiquidity);
 const liquidityWarning=liq!==null&&((oldLiq!==null&&oldLiq>0&&liq<oldLiq*.6)||liq<12000);
 const sellPressure=buys!==null&&sells!==null&&sells>=5&&((sells>Math.max(1,buys)*1.9&&fiveMin!==null&&fiveMin< -1)||(sells>Math.max(1,buys)*1.35&&fiveMin!==null&&fiveMin< -5));
 const marketReversal=fiveMin!==null&&fiveMin<=-9;
-if(factor<=1-STOP)closeTrade(pos,price,rate,'LÍMITE DE PÉRDIDA REFERENCIAL');
-else if(liquidityWarning)closeTrade(pos,price,rate,'RIESGO · CAÍDA DE LIQUIDEZ');
-else if(sellPressure||marketReversal)closeTrade(pos,price,rate,'RIESGO · DETERIORO DE MERCADO');
+if(factor<=1-STOP){closeTrade(pos,price,rate,'LÍMITE DE PÉRDIDA REFERENCIAL');riskExit=true;}
+else if(liquidityWarning){closeTrade(pos,price,rate,'RIESGO · CAÍDA DE LIQUIDEZ');riskExit=true;}
+else if(sellPressure||marketReversal){closeTrade(pos,price,rate,'RIESGO · DETERIORO DE MERCADO');riskExit=true;}
 else if(net>=TAKE)closeTrade(pos,price,rate,'META DE BENEFICIO NETO');
 else if(peakNet>=ARM&&price<=pos.peak*(1-TRAIL))closeTrade(pos,price,rate,'SEGUIMIENTO DE GANANCIA');
 else if(net>=.08&&((fiveMin!==null&&fiveMin<0)||(buys!==null&&sells!==null&&sells>buys*1.4)))closeTrade(pos,price,rate,'GANANCIA NETA · REVISIÓN DE TENDENCIA');
@@ -311,15 +311,15 @@ else if(hours>=MAX_HOLD_HOURS)closeTrade(pos,price,rate,'TIEMPO MÁXIMO 6H');
 }
 maybeVirtualPayout();
 if(equity()<=data.dayStart*(1-DAILY)){data.haltDay=data.day;$('lastError').textContent='Caída diaria estimada ≥ 5%: nuevas entradas bloqueadas; salidas simuladas siguen vigilándose mientras la página permanezca visible.'}
-if(running&&data.haltDay!==data.day&&!priceGap){
+if(running&&data.haltDay!==data.day&&!priceGap&&!riskExit){
 for(const item of qualifying){
 if(data.open.length>=MAX_POSITIONS||opened>=MAX_NEW_PER_SCAN)break;
 if(openTrade(item.mint,item.p,rate))opened++;
 }
 }
 data.lastCheck=now;lastReview=now;recentScans.push(now);
-summary='Última revisión: '+n+' tokens cotizados, '+qualifying.length+' señales confirmadas de mercado, '+opened+' nuevas posiciones virtuales. '+(priceGap?'Entradas bloqueadas por falta de cotización de una posición. ':'')+date(now)+'. Las señales no equivalen a verificación de seguridad.';
-if(opened===0&&qualifying.length>0&&running){let why=priceGap?'Falta la cotización de una posición existente':data.haltDay===data.day?'Límite de pérdida diaria activado':data.open.length>=MAX_POSITIONS?'Diez posiciones ocupadas':data.cash-RESERVE<MIN_STAKE?'Reserva y caja insuficiente':riskExposure()>=equity()*MAX_TOTAL_STOP_RISK-.75?'Presupuesto conjunto de riesgo agotado':'Pausa del token, tamaño mínimo o cupos de entrada';diagnostics+='<p class="amber"><b>Sin nueva compra:</b> '+esc(why)+'. Una señal favorable no obliga a entrar.</p>';}
+summary='Última revisión: '+n+' tokens cotizados, '+qualifying.length+' señales confirmadas de mercado, '+opened+' nuevas posiciones virtuales. '+(priceGap?'Entradas bloqueadas por falta de cotización. ':riskExit?'Entradas pausadas en esta revisión tras salida por riesgo. ':'')+date(now)+'. Las señales no equivalen a verificación de seguridad.';
+if(opened===0&&qualifying.length>0&&running){let why=priceGap?'Falta la cotización de una posición existente':riskExit?'Salida por riesgo detectada en esta revisión':data.haltDay===data.day?'Límite de pérdida diaria activado':data.open.length>=MAX_POSITIONS?'Diez posiciones ocupadas':data.cash-RESERVE<MIN_STAKE?'Reserva y caja insuficiente':riskExposure()>=equity()*MAX_TOTAL_STOP_RISK-.75?'Presupuesto conjunto de riesgo agotado':'Pausa del token, tamaño mínimo o cupos de entrada';diagnostics+='<p class="amber"><b>Sin nueva compra:</b> '+esc(why)+'. Una señal favorable no obliga a entrar.</p>';}
 persist();
 }catch(e){summary='Revisión fallida; los datos no están actualizados.';diagnostics='<p class="red">Consulta fallida: '+esc(e.message)+'. No se intentaron nuevas compras simuladas.</p>';$('lastError').textContent='Revisión cancelada; sin nuevas operaciones: '+e.message+'. No se inventaron precios ni tipo de cambio.'}
 finally{busy=false;render()}}
