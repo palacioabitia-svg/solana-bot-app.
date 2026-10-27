@@ -17,11 +17,12 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 </style></head><body>
 <p><a href="./index.html">← Wallet</a> · <a href="./radar.html">Radar</a> · <a href="./auditoria.html">Auditoría</a></p>
 <h1>Motor automático · Crecimiento V5</h1>
+<p class="amber"><b>OBJETIVO: CRECIMIENTO NETO. META: $100 → $200 MXN y siguientes duplicaciones.</b> No es una promesa de ganancias: pueden producirse pérdidas importantes.</p>
 <p class="amber"><b>MODO DEMOSTRACIÓN. No usa SOL, no opera en tu wallet y no realiza retiros.</b> Solo utiliza precios públicos de mercado. Las salidas son hipotéticas: un token real podría impedir vender o ejecutarse mucho peor.</p>
 <div class="card"><h2>Control de simulación</h2>
 <button id="start">Iniciar simulación automática</button><button id="stop" class="secondary">Detener</button><button id="once" class="secondary">Ejecutar revisión ahora</button>
 <p id="state" class="muted">Detenida. Los datos guardados solo están en este navegador.</p>
-<p class="note">Cuando está activa, consulta aproximadamente cada <b>15 segundos (4 revisiones por minuto)</b> solo con esta página abierta y visible. Puede registrar varias operaciones virtuales por revisión si existen candidatos, pero no garantiza ninguna. Al cerrarla deja de trabajar. No es un bot de ejecución permanente.</p>
+<p class="note">Cuando está activa, consulta aproximadamente cada <b>15 segundos (4 revisiones por minuto)</b> solo con esta página abierta y visible. Puede abrir varias posiciones virtuales, pero solo cuando sus filtros se cumplen en dos revisiones consecutivas. No opera por obligación. Al cerrarla deja de trabajar. No es un bot de ejecución permanente.</p>
 <p id="source" class="note">Tipo de cambio USD/MXN: pendiente de consulta.</p><p id="scan-summary" class="note">Sin evaluación de mercado.</p><p id="pace" class="note">Revisiones y operaciones recientes: 0.</p><div id="diagnostics" class="note">Pulsa «Iniciar simulación automática» para consultar el mercado.</div>
 </div>
 <div class="metrics" aria-label="Resultados simulados">
@@ -33,6 +34,8 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <div class="metric"><span>Posiciones abiertas</span><b id="positions">0 / 10</b><span>Máximo simultáneo</span></div>
 <div class="metric"><span>Retiros virtuales a Bitso</span><b id="payouts">$0.00</b><span>Sin transferencias reales</span></div>
 <div class="metric"><span>Última revisión</span><b id="updated">—</b><span>Solo precio de referencia, no cotización</span></div>
+<div class="metric"><span>Siguiente meta virtual</span><b id="goal">$200.00</b><span>MXN, sin garantía</span></div>
+<div class="metric"><span>Progreso de etapa</span><b id="progress">0%</b><span>Incluye retiros simulados</span></div>
 </div>
 <div class="card">
 <h2>Reglas automáticas de riesgo</h2>
@@ -80,6 +83,7 @@ $('diagnostics').innerHTML=diagnostics;
 const eq=equity();$('equity').textContent='$'+money(eq);$('cash').textContent='$'+money(data.cash);
 $('pnl').textContent=(realizedAndUnrealized()>=0?'+':'')+'$'+money(realizedAndUnrealized());
 $('positions').textContent=data.open.length+' / '+MAX_POSITIONS;$('payouts').textContent='$'+money(data.paid);
+const total=Math.max(0,eq+data.paid);let level=START;while(level*2<=total&&level<1e10)level*=2;const nextGoal=level*2;$('goal').textContent='$'+money(nextGoal);$('progress').textContent=Math.max(0,Math.min(100,(total-level)/(nextGoal-level)*100)).toFixed(1)+'%';
 $('updated').textContent=data.lastCheck?date(data.lastCheck):'—';
 $('state').textContent=busy?'Consultando fuentes de mercado…':running?(data.haltDay===data.day?'ACTIVA · entradas PAUSADAS por pérdida diaria':'ACTIVA · solo con esta página visible'):'DETENIDA · simulación local';
 $('start').disabled=running;$('stop').disabled=!running;
