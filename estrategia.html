@@ -54,13 +54,13 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <div class="card"><h2>Posiciones de prueba</h2><div id="open">Sin posiciones.</div></div>
 <div class="card"><h2>Historial de operaciones simuladas</h2><div id="history">Sin operaciones.</div>
 <button id="export" class="secondary">Exportar historial CSV</button><button id="reset" class="danger">Reiniciar simulación</button>
-<p class="note">El motor puede pasar mucho tiempo sin abrir una posición: no fuerza operaciones. El historial se guarda localmente en este navegador, no en GitHub ni en un servidor. Reiniciar borra el historial local tras confirmación. No equivale a un backtest histórico ni a una prueba de rentabilidad futura.</p>
+<p class="note">El motor puede pasar mucho tiempo sin abrir una posición: no fuerza operaciones. Esta versión V5 mantiene un historial independiente de la estrategia V4 para empezar con $100 MXN virtuales sin mezclar sus pérdidas anteriores. El historial se guarda localmente en este navegador, no en GitHub ni en un servidor. Reiniciar borra el historial local tras confirmación. No equivale a un backtest histórico ni a una prueba de rentabilidad futura.</p>
 </div>
 <div class="card"><h2>Estado de seguridad</h2><p class="red"><b>Compras reales desactivadas.</b> No hay validación completa de holders, sellabilidad, liquidez bloqueada, historial del creador o extensiones de todos los tokens. No se autoriza operar fondos ni acceder a la wallet desde esta simulación.</p><p id="lastError" class="amber"></p></div>
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
-const KEY='solana-paper-v2-20261027';
+const KEY='solana-paper-growth-v5-20261027';
 const START=100,RESERVE=30,MAX_POSITIONS=10,MAX_STAKE=.085,RISK=.015,STOP=.09,TAKE=.25,TRAIL=.08,ARM=.14,DAILY=.05;
 const POLL_MS=15000,COOLDOWN_MS=15*60000,MAX_HOLD_HOURS=6,MIN_STAKE=5,MAX_NEW_PER_SCAN=3;
 const ROUND_COST=.022,GAS=.05,MAX_AGE_MS=7*86400000;
@@ -69,7 +69,8 @@ const money=n=>Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximum
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=v=>v===null||v===undefined||v===''?null:(Number.isFinite(Number(v))?Number(v):null);
 const isMint=v=>/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v);
-const initial=()=>({cash:START,open:[],events:[],watch:[],paid:0,realizedNet:0,day:new Date().toISOString().slice(0,10),dayStart:START,lastCheck:0,cooldowns:{},haltDay:''});
+const localDay=()=>new Date().toLocaleDateString('sv-SE',{timeZone:'America/Mexico_City'});
+const initial=()=>({cash:START,open:[],events:[],watch:[],paid:0,realizedNet:0,day:localDay(),dayStart:START,lastCheck:0,cooldowns:{},haltDay:''});
 function load(){try{const v=JSON.parse(localStorage.getItem(KEY));if(!v||!Number.isFinite(v.cash)||!Array.isArray(v.open)||!Array.isArray(v.events)||!Array.isArray(v.watch))return initial();v.cooldowns=v.cooldowns||{};v.haltDay=v.haltDay||'';return v}catch{return initial()}}
 let data=load();
 function persist(){try{localStorage.setItem(KEY,JSON.stringify(data))}catch(e){$('lastError').textContent='No se pudo guardar la simulación en este navegador: '+e.message}}
@@ -249,7 +250,7 @@ data.cash-=payable;data.paid+=payable;data.dayStart-=payable;
 record({t:Date.now(),type:'RETIRO VIRTUAL BITSO',amount:payable,pnl:0});
 }}
 function refreshDay(){
-const today=new Date().toISOString().slice(0,10);
+const today=localDay();
 if(data.day!==today){data.day=today;data.dayStart=equity();data.haltDay='';record({t:Date.now(),type:'NUEVA JORNADA',amount:data.dayStart})}
 }
 async function tick(){
