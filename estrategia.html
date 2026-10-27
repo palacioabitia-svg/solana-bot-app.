@@ -18,14 +18,14 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <p><a href="./index.html">← Wallet</a> · <a href="./radar.html">Radar</a> · <a href="./auditoria.html">Auditoría</a></p>
 <h1>Motor automático · Scalping V9</h1><p class="green"><b>ACTUALIZACIÓN: HASTA 20% DEL CAPITAL POR OPERACIÓN, BENEFICIO NETO EN MXN</b></p><p class="green"><b>VERSIÓN V8 · RUTA ESTABLE</b> · 27 de octubre de 2026</p>
 <p class="amber"><b>OBJETIVO ASPIRACIONAL: ACUMULAR GANANCIAS NETAS DE $1–$2 MXN POR OPERACIÓN CON HASTA 20% DE CAPITAL.</b> La rentabilidad es incierta: no se garantizan operaciones frecuentes ni resultados positivos. La meta previa de +$10 por minuto queda solo como referencia comparativa, no como una expectativa.</p>
-<p class="amber"><b>META ASPIRACIONAL: +$10 MXN NETOS POR MINUTO, partiendo de $100 MXN.</b> Es un objetivo extraordinariamente arriesgado (10% del capital inicial cada minuto), no un ingreso previsto ni garantizado. El sistema no inventará ganancias ni abrirá posiciones sin una señal.</p>
-<p class="amber"><b>OBJETIVO: CRECIMIENTO NETO. META: $100 → $200 MXN y siguientes duplicaciones.</b> No es una promesa de ganancias: pueden producirse pérdidas importantes.</p>
+<p class="amber"><b>META DE +$10 MXN NETOS POR MINUTO:</b> se conserva como comparación estadística, no como expectativa de resultados. Con $100 MXN y los costos estimados requiere movimientos especialmente grandes y frecuentes; no se garantiza.</p>
+<p class="amber"><b>CRECIMIENTO POR REINVERSIÓN:</b> las ganancias virtuales aumentan el patrimonio y, con ello, el presupuesto por operación. No hay ganancias aseguradas; puede perderse parte importante del capital.</p>
 <p class="amber"><b>MODO DEMOSTRACIÓN. No usa SOL, no opera en tu wallet y no realiza retiros.</b> Solo utiliza precios públicos de mercado. Las salidas son hipotéticas: un token real podría impedir vender o ejecutarse mucho peor.</p>
 <div class="card"><h2>Control de simulación</h2>
 <button id="start">Iniciar simulación automática</button><button id="stop" class="secondary">Detener</button><button id="once" class="secondary">Ejecutar revisión ahora</button>
 <p id="state" class="muted">Detenida. Los datos guardados solo están en este navegador.</p><p id="lastDecision" class="amber">Última decisión: sin escanear.</p><p id="healthStatus" class="note">Estado del escaneo: todavía no se ha revisado el mercado.</p><p id="topError" class="red"></p>
 <p class="note">Cuando está activa, intenta consultar cada <b>10 segundos (hasta 6 revisiones por minuto)</b> solo con esta página abierta y visible. Puede abrir posiciones virtuales cuando observa un precio que se mueve al alza entre consultas y cumple los filtros de actividad, riesgo y capital. No opera por obligación. Al cerrarla deja de trabajar. No es un bot de ejecución permanente.</p>
-<p id="source" class="note">Tipo de cambio USD/MXN: pendiente de consulta.</p><p id="scan-summary" class="note">Sin evaluación de mercado.</p><p id="pace" class="note">Revisiones y operaciones recientes: 0.</p><p class="note">Scalping: busca movimientos cortos cada 15 segundos; solo considera compra si el precio consultado cambió entre revisiones. DexScreener no proporciona cotizaciones ejecutables ni garantiza una actualización cada 15 segundos.</p><p class="note" id="sources-status">Buscando fuentes de mercado…</p><div id="diagnostics" class="note">Pulsa «Iniciar simulación automática» para consultar el mercado.</div><div id="candidates" class="note" style="overflow-x:auto"></div><details style="margin-top:14px"><summary>Ver las últimas decisiones del bot</summary><div id="decisions" class="note">Sin decisiones registradas.</div></details>
+<p id="source" class="note">Tipo de cambio USD/MXN: pendiente de consulta.</p><p id="scan-summary" class="note">Sin evaluación de mercado.</p><p id="pace" class="note">Revisiones y operaciones recientes: 0.</p><p class="note">Scalping: busca señales nuevas de precio, compras y volumen aproximadamente cada 10 segundos mientras la página está visible. DexScreener puede repetir datos o bloquear consultas; no ofrece cotizaciones ejecutables.</p><p class="note" id="sources-status">Buscando fuentes de mercado…</p><div id="diagnostics" class="note">Pulsa «Iniciar simulación automática» para consultar el mercado.</div><div id="candidates" class="note" style="overflow-x:auto"></div><details style="margin-top:14px"><summary>Ver las últimas decisiones del bot</summary><div id="decisions" class="note">Sin decisiones registradas.</div></details>
 </div>
 <div class="metrics" aria-label="Resultados simulados">
 <div class="metric"><span>Capital inicial</span><b>$100.00</b><span>MXN simulados</span></div>
@@ -54,7 +54,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <p id="feeReality" class="amber">Estimación del costo de una operación de tamaño pequeño: pendiente.</p><p id="minuteFeasibility" class="note">Viabilidad de la meta +$10/min: pendiente de cálculo.</p>
 <p id="profitStatistics" class="note"></p>
 <button id="exportDiagnosis" class="secondary">Exportar diagnóstico de la última hora (CSV)</button>
-<p class="note">El registro de escaneos comienza con esta actualización: no podemos recuperar los escaneos de la hora anterior desde Phantom. Las operaciones que ya estén guardadas en este navegador sí se incluyen si su fecha corresponde. Incluye decisiones, errores y ventas virtuales. No prueba que esas compras o ventas hubieran sido posibles en la cadena ni constituye un backtest histórico.</p>
+<p class="note">El registro de escaneos comenzó con la actualización previa del diagnóstico: no podemos recuperar las revisiones anteriores a ese registro desde Phantom. Las operaciones que ya estén guardadas en este navegador sí se incluyen si su fecha corresponde. Incluye decisiones, errores y ventas virtuales. No prueba que esas compras o ventas hubieran sido posibles en la cadena ni constituye un backtest histórico.</p>
 </div>
 <div class="card">
 <h2>Reglas del simulador · crecimiento con control de pérdidas</h2>
@@ -106,9 +106,9 @@ function riskExposure(){return data.open.reduce((acc,p)=>acc+stopLossIfTriggered
 function economicMetrics(stake){
  if(!Number.isFinite(stake)||stake<=GAS)return null;
  const factor=(stake+GAS)*(1+ROUND_COST)/((stake-GAS)*(1-ROUND_COST));
- const target=(stake*1.06+GAS)*(1+ROUND_COST)/((stake-GAS)*(1-ROUND_COST));
+ const forNet=mxn=>((stake+mxn+GAS)*(1+ROUND_COST)/((stake-GAS)*(1-ROUND_COST))-1)*100;
  const cost=stake-((stake-GAS)*(1-ROUND_COST)/(1+ROUND_COST)-GAS);
- return {breakeven:(factor-1)*100,toNetSix:(target-1)*100,cost}
+ return {breakeven:(factor-1)*100,toNetOne:forNet(1),toNetTwo:forNet(2),cost}
 }
 function hourReport(){
  const after=Date.now()-3600000;
@@ -131,10 +131,10 @@ function minuteTargetMath(stake,positions){
  return ( ((stake+MINUTE_GOAL+positions*GAS)*(1+ROUND_COST))/((stake-positions*GAS)*(1-ROUND_COST))-1)*100;
 }
 function feeSummary(){
- const stake=data.open[0]?.cost||Math.min(7,START*.085);
+ const stake=data.open[0]?.cost||Math.min(START*.20,Math.max(MIN_STAKE,data.cash));
  const r=economicMetrics(stake);
- if(!r)return 'No es posible calcular el punto de equilibrio sin importe válido.';
- return 'Con una posición de $'+money(stake)+' MXN, el modelo supone alrededor de $'+money(r.cost)+' de costo conjunto de entrada y salida. El token debe subir '+r.breakeven.toFixed(1)+'% para empatar, y '+r.toNetSix.toFixed(1)+'% para producir +6% NETO sobre lo invertido (sin cambios USD/MXN).'
+ if(!r)return 'No es posible calcular costos con una inversión menor o igual al gasto fijo.';
+ return 'Con $'+money(stake)+' MXN por posición, los costos totales estimados de compra y venta son ~$'+money(r.cost)+' aun con precio estable. El token debe subir '+r.breakeven.toFixed(1)+'% para recuperar costos, '+r.toNetOne.toFixed(1)+'% para dejar +$1 neto y '+r.toNetTwo.toFixed(1)+'% para dejar +$2 netos, con tipo USD/MXN constante y ejecución hipotética.';
 }
 function record(event){data.events.unshift(event);data.events=data.events.slice(0,400)}
 function decision(status,message){lastDecision=status+' · '+message;decisionHistory.unshift({t:Date.now(),status,message});decisionHistory=decisionHistory.slice(0,24)}
@@ -145,15 +145,15 @@ const hr=hourReport();
 $('hourScans').textContent=String(hr.valid);
 $('hourTrades').textContent=hr.buy+' / '+hr.sell;
 $('hourNet').textContent=signedMoney(hr.pnl);
-const econ=economicMetrics(data.open[0]?.cost||7);
+const econ=economicMetrics(data.open[0]?.cost||START*.20);
 $('breakEven').textContent=econ?econ.breakeven.toFixed(1)+'%':'—';
 $('feeReality').textContent=feeSummary();
 const invested=data.open.reduce((n,p)=>n+p.cost,0);
 const count=data.open.length;
-const exampleStake=invested>0?invested:Math.min(4*7,Math.max(0,data.cash-RESERVE));
-const exampleN=invested>0?count:4;
+const exampleStake=invested>0?invested:Math.min(5*START*.20,Math.max(0,data.cash));
+const exampleN=invested>0?count:5;
 const required=minuteTargetMath(exampleStake,exampleN);
-$('minuteFeasibility').textContent=required===null?'No hay posiciones suficientes para calcular una meta factible.':'Para ganar $10 NETOS con '+exampleN+' posiciones que suman $'+money(exampleStake)+' MXN, todas tendrían que subir alrededor de '+required.toFixed(1)+'% antes de venderse (suponiendo el mismo movimiento, ejecución perfecta y tipo de cambio estable). '+(invested>0?'Cálculo sobre las posiciones actuales.':'Ejemplo con 4 posiciones de ~$7, no una previsión de operaciones.')
+$('minuteFeasibility').textContent=required===null?'No hay posiciones suficientes para calcular una meta factible.':'Para ganar $10 NETOS con '+exampleN+' posiciones que suman $'+money(exampleStake)+' MXN, todas tendrían que subir alrededor de '+required.toFixed(1)+'% antes de venderse (suponiendo el mismo movimiento, ejecución perfecta y tipo de cambio estable). '+(invested>0?'Cálculo sobre las posiciones actuales.':'Ejemplo con hasta cinco posiciones de $20, no una previsión de operaciones.')
 $('profitStatistics').textContent='Esta hora: '+hr.valid+' escaneos válidos; '+hr.errors+' errores; '+hr.signals+' señales; '+hr.noSignals+' revisiones sin señales; '+hr.buy+' compras y '+hr.sell+' ventas. Ganadoras: '+hr.wins+'; no ganadoras: '+hr.losers+'.';
 $('profitDiagnosis').textContent=hr.valid===0&&hr.errors===0?'No hay escaneos registrados en esta hora en este navegador: aún no se puede medir si la estrategia está funcionando.':hr.valid===0?'Las consultas fallaron: la estrategia no dispone de precios confiables.':hr.buy===0?'Se consultaron '+hr.valid+' veces los datos, pero ninguna señal se convirtió en una compra. Principales bloqueos: '+(hr.blockers.map(([name,n])=>name+' ('+n+')').join('; ')||'sin detalles')+'.':hr.sell===0?'Ya existen compras virtuales, pero no hubo ventas realizadas esta hora. No significa que existan ganancias cobradas.':'Resultado neto REALIZADO de la última hora: '+signedMoney(hr.pnl)+'. Se excluyen ganancias no vendidas; la estimación de posiciones abiertas figura en Patrimonio.';
 $('lastDecision').textContent='Última decisión: '+lastDecision;
