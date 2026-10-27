@@ -73,6 +73,7 @@ const POLL_MS=15000,COOLDOWN_MS=90*1000,MAX_HOLD_HOURS=1.5,MIN_STAKE=5,MAX_NEW_P
 const ROUND_COST=.022,GAS=.05,MAX_AGE_MS=7*86400000;
 let running=false,busy=false,fx=null,lastPrices={},lastReview=0,summary='Sin evaluación de mercado.',diagnostics='Todavía no se ha realizado una consulta.',recentScans=[],confirmations=new Map(),observedPrices=new Map(),discoveryCache=null,discoveryAt=0,topCandidates=[];
 const money=n=>Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
+const signedMoney=n=>(n<0?'-$':'+$')+money(Math.abs(n));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const num=v=>v===null||v===undefined||v===''?null:(Number.isFinite(Number(v))?Number(v):null);
 const isMint=v=>/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v);
@@ -94,15 +95,15 @@ const cutoff=Date.now()-60000;recentScans=recentScans.filter(t=>t>=cutoff);const
 const closedTrades=data.events.filter(e=>e.type.startsWith('VENTA SIMULADA')&&Number.isFinite(e.pnl));
 const minutePnl=closedTrades.filter(e=>e.t>=cutoff).reduce((n,e)=>n+e.pnl,0);
 const tenPnl=closedTrades.filter(e=>e.t>=Date.now()-600000).reduce((n,e)=>n+e.pnl,0);
-$('minutePnl').textContent=(minutePnl>=0?'+':'')+'$'+money(minutePnl);
-$('tenPnl').textContent=(tenPnl>=0?'+':'')+'$'+money(tenPnl);
+$('minutePnl').textContent=signedMoney(minutePnl);
+$('tenPnl').textContent=signedMoney(tenPnl);
 $('minuteStatus').textContent=minutePnl>=MINUTE_GOAL?'Meta simulada superada (últimos 60 s)':'Faltan $'+money(Math.max(0,MINUTE_GOAL-minutePnl))+' para meta +$10/min (últimos 60 s)';
 
 $('pace').innerHTML='<b>Últimos 60 s:</b> '+recentScans.length+' revisiones, '+minuteEvents.length+' operaciones virtuales (entradas y salidas). Son eventos simulados, no transacciones on-chain.';
 $('diagnostics').innerHTML=diagnostics;
 $('candidates').innerHTML=topCandidates.length?'<p><b>Tokens observados (reales, NO recomendados):</b></p><table><thead><tr><th>Token</th><th>Liquidez USD</th><th>Precio 5m</th><th>Compras / ventas 5m</th><th>Motivo</th></tr></thead><tbody>'+topCandidates.map(x=>'<tr><td>'+esc(x.symbol)+'</td><td>'+money(x.liq)+'</td><td>'+esc(x.m5===null?'ND':x.m5.toFixed(2)+'%')+'</td><td>'+esc(x.buys===null?'ND':x.buys)+' / '+esc(x.sells===null?'ND':x.sells)+'</td><td>'+esc(x.reason)+'</td></tr>').join('')+'</tbody></table>':'';
 const eq=equity();$('equity').textContent='$'+money(eq);$('cash').textContent='$'+money(data.cash);
-$('pnl').textContent=(realizedAndUnrealized()>=0?'+':'')+'$'+money(realizedAndUnrealized());
+$('pnl').textContent=signedMoney(realizedAndUnrealized());
 $('positions').textContent=data.open.length+' / '+MAX_POSITIONS;$('payouts').textContent='$'+money(data.paid);
 const total=Math.max(0,eq+data.paid);let level=START;while(level*2<=total&&level<1e10)level*=2;const nextGoal=level*2;$('goal').textContent='$'+money(nextGoal);$('progress').textContent=Math.max(0,Math.min(100,(total-level)/(nextGoal-level)*100)).toFixed(1)+'%';$('riskTotal').textContent='$'+money(riskExposure());const closed=data.events.filter(e=>e.type.startsWith('VENTA SIMULADA')&&Number.isFinite(e.pnl));$('winloss').textContent=closed.filter(e=>e.pnl>0).length+' / '+closed.filter(e=>e.pnl<=0).length;
 $('updated').textContent=data.lastCheck?date(data.lastCheck):'—';
