@@ -170,38 +170,53 @@ return {ok:!reason,score,reason:reason||'Actividad favorable; seguridad on-chain
 }
 function signal(p){return inspectSignal(p).ok}
 function reportMarket(m){
-const reasons={},rejected=[],qualifying=[],wait=[],now=Date.now(),seen=new Set();
-const leaderboard=[];
+const reasons={},rejected=[],qualifying=[],wait=[],now=Date.now(),seen=new Set(),leaderboard=[];
+let unchanged=0,favorablePriceUpdates=0;
 for(const mint of m.mints){
 const p=m.byMint[mint],result=inspectSignal(p);
-if(p)leaderboard.push({symbol:String(p.baseToken?.symbol||p.baseToken?.name||'?').slice(0,22),liq:num(p.liquidity?.usd)||0,m5:num(p.priceChange?.m5),buys:num(p.txns?.m5?.buys),sells:num(p.txns?.m5?.sells),reason:result.ok?'Señal '+result.score+'/100':result.reason,score:result.score});
+if(!p){
+reasons[result.reason]=(reasons[result.reason]||0)+1;confirmations.delete(mint);continue;
+}
+const quote=num(p.priceUsd),pair=p.pairAddress,prev=observedPrices.get(mint);
+const hasPrevious=!!(prev&&prev.pair===pair&&now-prev.at<=120000&&prev.price>0);
+const pct=hasPrevious?(quote/prev.price-1)*100:null;
+const upward=hasPrevious&&pct>=.08&&pct<=7;
+observedPrices.set(mint,{price:quote,pair,at:now});
+const label=String(p.baseToken?.symbol||p.baseToken?.name||'?').slice(0,22);
 if(!result.ok){
-reasons[result.reason]=(reasons[result.reason]||0)+1;
-confirmations.delete(mint);
-if(p&&rejected.length<5)rejected.push({symbol:String(p.baseToken?.symbol||'?').slice(0,28),reason:result.reason});
-continue
+reasons[result.reason]=(reasons[result.reason]||0)+1;confirmations.delete(mint);
+if(rejected.length<5)rejected.push({symbol:label,reason:result.reason});
+leaderboard.push({symbol:label,liq:num(p.liquidity?.usd)||0,m5:num(p.priceChange?.m5),buys:num(p.txns?.m5?.buys),sells:num(p.txns?.m5?.sells),reason:result.reason,score:result.score});
+continue;
 }
 seen.add(mint);
-const quote=num(p.priceUsd),pair=p.pairAddress,old=confirmations.get(mint);
-const stable=old&&old.pair===pair&&now-old.last<=120000&&quote>=old.price*.995&&quote<=old.price*1.22;
-const state=stable?{count:Math.min(5,old.count+1),first:old.first,last:now,price:quote,pair}:{count:1,first:now,last:now,price:quote,pair};
+const old=confirmations.get(mint);
+const consistent=old&&old.pair===pair&&now-old.last<=120000&&quote>=old.price*.98&&quote<=old.price*1.22;
+const state=consistent?{count:Math.min(6,old.count+1),first:old.first,last:now,price:quote,pair}:
+{count:1,first:now,last:now,price:quote,pair};
 confirmations.set(mint,state);
-if((result.score>=72&&state.count>=1)||(state.count>=2&&now-state.first>=10000))qualifying.push({mint,p,score:result.score});
-else wait.push(mint)
+let description='';
+if(!hasPrevious){description='Esperando segundo precio independiente';unchanged++}
+else if(!upward){description=(pct!==null&&Math.abs(pct)<.08)?'Precio sin movimiento útil':'Movimiento entre revisiones no favorable';unchanged++}
+else if(state.count<2){description='Esperando confirmación de tendencia'}
+else {description='Scalping: señal de actividad '+result.score+'/100';favorablePriceUpdates++;qualifying.push({mint,p,score:result.score})}
+if(qualifying.length+wait.length<m.mints.length&&!qualifying.some(x=>x.mint===mint))wait.push(mint);
+leaderboard.push({symbol:label,liq:num(p.liquidity?.usd)||0,m5:num(p.priceChange?.m5),buys:num(p.txns?.m5?.buys),sells:num(p.txns?.m5?.sells),reason:description,score:result.score});
 }
 for(const [mint,state] of confirmations){if(now-state.last>180000||(!seen.has(mint)&&!data.open.some(p=>p.mint===mint)))confirmations.delete(mint)}
+for(const [mint,mark] of observedPrices){if(now-mark.at>180000)observedPrices.delete(mint)}
 qualifying.sort((a,b)=>b.score-a.score||(num(b.p.liquidity?.usd)||0)-(num(a.p.liquidity?.usd)||0));
 topCandidates=leaderboard.sort((a,b)=>b.score-a.score||b.liq-a.liq).slice(0,12);
 const counts=Object.entries(reasons).sort((a,b)=>b[1]-a[1]).slice(0,8);
 const feed=m.sources.map(f=>esc(f.label)+': '+f.n+(f.error?' (sin respuesta)':'')).join(' · ');
-diagnostics='<p><b>Universo:</b> '+m.mints.length+' tokens · '+Object.keys(m.byMint).length+' pares · <b>'+qualifying.length+' señales</b> · '+wait.length+' esperando segunda lectura.</p>'+
+diagnostics='<p><b>Universo:</b> '+m.mints.length+' tokens · '+Object.keys(m.byMint).length+' pares · <b>'+qualifying.length+' señales con precio al alza entre consultas</b> · '+unchanged+' sin cambio confirmado.</p>'+
 '<p><b>Fuentes:</b> '+feed+'</p>'+
-(qualifying.length===0?'<p class="amber">No se encontró aún una señal que cumpla los filtros. Sin posiciones nuevas para evitar operaciones artificiales.</p>':'<p>Señales de actividad ordenadas por puntuación; esto no acredita seguridad ni rentabilidad.</p>')+
+(qualifying.length===0?'<p class="amber">Sin compra virtual: falta una subida confirmada entre dos cotizaciones distintas, o los filtros de riesgo no se cumplen. No comprar a precio inmóvil evita pagar comisiones inútiles.</p>':'<p>Las señales indican movimiento de precio observado, no una garantía de rentabilidad ni seguridad.</p>')+
 '<p><b>Motivos de descarte:</b> '+(counts.length?counts.map(([why,n])=>'<span style="display:inline-block;margin:3px 6px 3px 0;padding:5px 8px;border-radius:7px;background:#151820">'+esc(why)+': <b>'+n+'</b></span>').join(''):'Ninguno')+'</p>'+
 (rejected.length?'<p><b>Ejemplos descartados:</b> '+rejected.map(x=>esc(x.symbol)+' ('+esc(x.reason)+')').join(' · ')+'</p>':'')+
-(m.failures.length?'<p class="amber"><b>Fuentes parciales:</b> '+m.failures.map(esc).join(' · ')+'</p>':'')+
-'<p class="amber"><b>Solo simulación.</b> Las búsquedas y anuncios no son recomendaciones; pueden incluir tokens promocionados y no se ha verificado que puedan venderse.</p>';
-return qualifying
+(m.failures.length?'<p class="amber"><b>Fuentes con errores:</b> '+m.failures.map(esc).join(' · ')+'</p>':'')+
+'<p class="amber">Solo precios de referencia. No se auditan honeypots, liquidez bloqueada, transacciones on-chain ni posibilidad real de venta; no realiza compras reales.</p>';
+return qualifying;
 }
 async function market(){
 const now=Date.now();
