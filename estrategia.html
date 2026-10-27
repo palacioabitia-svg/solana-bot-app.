@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<title>Solana Bot · Motor de decisiones V8</title>
+<title>Solana Bot · Diagnóstico de rentabilidad V8</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}
 body{background:#101116;color:#f5f5f5;font:15px/1.48 system-ui,-apple-system,sans-serif;max-width:840px;margin:auto;padding:22px}
@@ -16,7 +16,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 @media(max-width:500px){body{padding:14px}.card{padding:17px}.metrics{gap:8px}.metric{padding:11px}.metric b{font-size:19px}table{font-size:12px}th,td{padding:8px 4px}}
 </style></head><body>
 <p><a href="./index.html">← Wallet</a> · <a href="./radar.html">Radar</a> · <a href="./auditoria.html">Auditoría</a></p>
-<h1>Motor de decisiones · Scalping V8</h1><p class="green"><b>VERSIÓN V8 · RUTA ESTABLE</b> · 27 de octubre de 2026</p>
+<h1>Motor de decisiones · Scalping V8</h1><p class="green"><b>ACTUALIZACIÓN: DIAGNÓSTICO DE RENTABILIDAD Y COSTOS</b></p><p class="green"><b>VERSIÓN V8 · RUTA ESTABLE</b> · 27 de octubre de 2026</p>
 <p class="amber"><b>META ASPIRACIONAL: +$10 MXN NETOS POR MINUTO, partiendo de $100 MXN.</b> Es un objetivo extraordinariamente arriesgado (10% del capital inicial cada minuto), no un ingreso previsto ni garantizado. El sistema no inventará ganancias ni abrirá posiciones sin una señal.</p>
 <p class="amber"><b>OBJETIVO: CRECIMIENTO NETO. META: $100 → $200 MXN y siguientes duplicaciones.</b> No es una promesa de ganancias: pueden producirse pérdidas importantes.</p>
 <p class="amber"><b>MODO DEMOSTRACIÓN. No usa SOL, no opera en tu wallet y no realiza retiros.</b> Solo utiliza precios públicos de mercado. Las salidas son hipotéticas: un token real podría impedir vender o ejecutarse mucho peor.</p>
@@ -42,6 +42,18 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <div class="metric"><span>Progreso de etapa</span><b id="progress">0%</b><span>Incluye retiros simulados</span></div>
 <div class="metric"><span>Pérdida estimada si saltan todos los stops</span><b id="riskTotal">$0.00</b><span>Modelo orientativo; la pérdida puede ser mayor</span></div>
 <div class="metric"><span>Ventas con ganancia / pérdida</span><b id="winloss">0 / 0</b><span>Operaciones cerradas del historial local</span></div>
+<div class="metric"><span>Escaneos válidos últimos 60 min</span><b id="hourScans">0</b><span>Consultas válidas, no operaciones</span></div>
+<div class="metric"><span>Compras / ventas virtuales última hora</span><b id="hourTrades">0 / 0</b><span>Operaciones registradas en esta hora</span></div>
+<div class="metric"><span>Resultado neto realizado última hora</span><b id="hourNet">+$0.00</b><span>Ganancias o pérdidas de ventas cerradas</span></div>
+<div class="metric"><span>Equilibrio de una operación pequeña</span><b id="breakEven">—</b><span>Subida requerida según costos estimados</span></div>
+</div>
+<div class="card">
+<h2>Diagnóstico: ¿por qué no hubo ganancias?</h2>
+<p id="profitDiagnosis" class="note">Se calcula a partir de las operaciones y escaneos registrados en este navegador. No tenemos acceso a las operaciones de Phantom desde GitHub.</p>
+<p id="feeReality" class="amber">Estimación del costo de una operación de tamaño pequeño: pendiente.</p>
+<p id="profitStatistics" class="note"></p>
+<button id="exportDiagnosis" class="secondary">Exportar diagnóstico de la última hora (CSV)</button>
+<p class="note">Incluye decisiones por revisión, errores de datos y ventas virtuales. No prueba que las compras o ventas hubieran sido posibles en la cadena; no equivale a un backtest histórico.</p>
 </div>
 <div class="card">
 <h2>Reglas del simulador · crecimiento con control de pérdidas</h2>
@@ -79,8 +91,8 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const num=v=>v===null||v===undefined||v===''?null:(Number.isFinite(Number(v))?Number(v):null);
 const isMint=v=>/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v);
 const localDay=()=>new Date().toLocaleDateString('sv-SE',{timeZone:'America/Mexico_City'});
-const initial=()=>({cash:START,open:[],events:[],watch:[],paid:0,realizedNet:0,day:localDay(),dayStart:START,lastCheck:0,cooldowns:{},haltDay:''});
-function load(){try{const v=JSON.parse(localStorage.getItem(KEY));if(!v||!Number.isFinite(v.cash)||!Array.isArray(v.open)||!Array.isArray(v.events)||!Array.isArray(v.watch))return initial();v.cooldowns=v.cooldowns||{};v.haltDay=v.haltDay||'';return v}catch{return initial()}}
+const initial=()=>({cash:START,open:[],events:[],watch:[],scanLog:[],paid:0,realizedNet:0,day:localDay(),dayStart:START,lastCheck:0,cooldowns:{},haltDay:''});
+function load(){try{const v=JSON.parse(localStorage.getItem(KEY));if(!v||!Number.isFinite(v.cash)||!Array.isArray(v.open)||!Array.isArray(v.events)||!Array.isArray(v.watch))return initial();v.cooldowns=v.cooldowns||{};v.haltDay=v.haltDay||'';v.scanLog=Array.isArray(v.scanLog)?v.scanLog:[];return v}catch{return initial()}}
 let data=load();
 function persist(){try{localStorage.setItem(KEY,JSON.stringify(data))}catch(e){$('lastError').textContent='No se pudo guardar la simulación en este navegador: '+e.message}}
 function date(t){return new Date(t).toLocaleString('es-MX',{dateStyle:'short',timeStyle:'medium'})}
@@ -89,11 +101,49 @@ function realizedAndUnrealized(){return equity()+data.paid-START}
 function exitValue(qty,price,rate){return Math.max(0,qty*price*rate*(1-ROUND_COST)-GAS)}
 function stopLossIfTriggered(p){const rate=num(p.entryFx)||fx?.rate;if(!rate)return p.cost;return Math.max(0,p.cost-exitValue(p.qty,p.entryPrice*(1-STOP),rate))}
 function riskExposure(){return data.open.reduce((acc,p)=>acc+stopLossIfTriggered(p),0)}
+function economicMetrics(stake){
+ if(!Number.isFinite(stake)||stake<=GAS)return null;
+ const factor=(stake+GAS)*(1+ROUND_COST)/((stake-GAS)*(1-ROUND_COST));
+ const target=(stake*1.06+GAS)*(1+ROUND_COST)/((stake-GAS)*(1-ROUND_COST));
+ const cost=stake-((stake-GAS)*(1-ROUND_COST)/(1+ROUND_COST)-GAS);
+ return {breakeven:(factor-1)*100,toNetSix:(target-1)*100,cost}
+}
+function hourReport(){
+ const after=Date.now()-3600000;
+ const scans=(data.scanLog||[]).filter(x=>x.t>=after);
+ const events=data.events.filter(e=>e.t>=after);
+ const buys=events.filter(e=>e.type==='COMPRA SIMULADA'),sales=events.filter(e=>e.type.startsWith('VENTA SIMULADA')&&Number.isFinite(e.pnl));
+ const profit=sales.reduce((a,e)=>a+e.pnl,0);
+ const errors=scans.filter(x=>x.error);
+ const valid=scans.filter(x=>!x.error);
+ const noSignals=valid.filter(x=>!x.signals).length;
+ const noEntries=valid.filter(x=>!x.opened).length;
+ const signals=valid.reduce((a,x)=>a+(x.signals||0),0);
+ const blockers={};
+ for(const item of valid){if(item.opened)continue;const name=item.blocked||'Sin motivo identificado';blockers[name]=(blockers[name]||0)+1}
+ const key=Object.entries(blockers).sort((a,b)=>b[1]-a[1]).slice(0,4);
+ return {valid:valid.length,errors:errors.length,buy:buys.length,sell:sales.length,pnl:profit,wins:sales.filter(x=>x.pnl>0).length,losers:sales.filter(x=>x.pnl<=0).length,noSignals,noEntries,signals,blockers:key,scans}
+}
+function feeSummary(){
+ const stake=data.open[0]?.cost||Math.min(7,START*.085);
+ const r=economicMetrics(stake);
+ if(!r)return 'No es posible calcular el punto de equilibrio sin importe válido.';
+ return 'Con una posición de $'+money(stake)+' MXN, el modelo supone alrededor de $'+money(r.cost)+' de costo conjunto de entrada y salida. El token debe subir '+r.breakeven.toFixed(1)+'% para empatar, y '+r.toNetSix.toFixed(1)+'% para producir +6% NETO sobre lo invertido (sin cambios USD/MXN).'
+}
 function record(event){data.events.unshift(event);data.events=data.events.slice(0,400)}
 function decision(status,message){lastDecision=status+' · '+message;decisionHistory.unshift({t:Date.now(),status,message});decisionHistory=decisionHistory.slice(0,24)}
 function saveRunning(){try{localStorage.setItem(RUN_KEY,running?'1':'0')}catch{}}
 function render(){
 $('scan-summary').textContent=summary;
+const hr=hourReport();
+$('hourScans').textContent=String(hr.valid);
+$('hourTrades').textContent=hr.buy+' / '+hr.sell;
+$('hourNet').textContent=signedMoney(hr.pnl);
+const econ=economicMetrics(data.open[0]?.cost||7);
+$('breakEven').textContent=econ?econ.breakeven.toFixed(1)+'%':'—';
+$('feeReality').textContent=feeSummary();
+$('profitStatistics').textContent='Esta hora: '+hr.valid+' escaneos válidos; '+hr.errors+' errores; '+hr.signals+' señales; '+hr.noSignals+' revisiones sin señales; '+hr.buy+' compras y '+hr.sell+' ventas. Ganadoras: '+hr.wins+'; no ganadoras: '+hr.losers+'.';
+$('profitDiagnosis').textContent=hr.valid===0&&hr.errors===0?'No hay escaneos registrados en esta hora en este navegador: aún no se puede medir si la estrategia está funcionando.':hr.valid===0?'Las consultas fallaron: la estrategia no dispone de precios confiables.':hr.buy===0?'Se consultaron '+hr.valid+' veces los datos, pero ninguna señal se convirtió en una compra. Principales bloqueos: '+(hr.blockers.map(([name,n])=>name+' ('+n+')').join('; ')||'sin detalles')+'.':hr.sell===0?'Ya existen compras virtuales, pero no hubo ventas realizadas esta hora. No significa que existan ganancias cobradas.':'Resultado neto REALIZADO de la última hora: '+signedMoney(hr.pnl)+'. Se excluyen ganancias no vendidas; la estimación de posiciones abiertas figura en Patrimonio.';
 $('lastDecision').textContent='Última decisión: '+lastDecision;
 const ageSinceScan=data.lastCheck?Math.max(0,Math.round((Date.now()-data.lastCheck)/1000)):null;
 $('healthStatus').textContent=!running?'Monitor detenido. Pulsa Iniciar simulación automática.':document.hidden?'Monitor en pausa: Phantom no está visible.':busy?'Revisión en curso · esperando proveedores…':ageSinceScan===null?'Monitor activo · preparando primera revisión':ageSinceScan>90?'ALERTA: última revisión válida hace '+ageSinceScan+' s. Comprueba conexión y errores.':'Monitor activo · última revisión válida hace '+ageSinceScan+' s.';
@@ -327,7 +377,7 @@ const today=localDay();
 if(data.day!==today){data.day=today;data.dayStart=equity();data.haltDay='';record({t:Date.now(),type:'NUEVA JORNADA',amount:data.dayStart})}
 }
 async function tick(){
-if(busy||document.hidden)return;busy=true;$('lastError').textContent='';render();
+if(busy||document.hidden)return;const scanStarted=Date.now();busy=true;$('lastError').textContent='';render();
 try{
 const rate=(await getFx()).rate;refreshDay();
 const m=await market(),now=Date.now(),prices={};let n=0,opened=0,priceGap=false,riskExit=false;const qualifying=reportMarket(m);
@@ -362,12 +412,16 @@ if(openTrade(item.mint,item.p,rate))opened++;
 }
 }
 data.lastCheck=now;lastReview=now;recentScans.push(now);
+ const closedNow=data.events.filter(e=>e.t>=scanStarted&&e.type.startsWith('VENTA SIMULADA')).length;
 const riskMsg=priceGap?'No hay cotización del par de una posición':riskExit?'Se cerró posición por riesgo':data.haltDay===data.day?'Pérdida diaria máxima alcanzada':data.open.length>=MAX_POSITIONS?'Máximo de posiciones en uso':data.cash-RESERVE<MIN_STAKE?'Capital disponible insuficiente':riskExposure()>equity()*MAX_TOTAL_STOP_RISK-.75?'Presupuesto de riesgo agotado':'Sin señal de precio/flujo o en espera de enfriamiento';
 decision(opened>0?'ENTRADA SIMULADA':riskExit?'SALIDA POR RIESGO':qualifying.length?'SEÑAL SIN ENTRADA':'SIN SEÑAL',opened>0?opened+' posiciones virtuales abiertas tras revisar '+n+' pares.':riskMsg+'; '+n+' pares consultados, '+qualifying.length+' señales nuevas.');
+ const statusText=opened>0?'Compró '+opened:riskMsg;
+ data.scanLog.unshift({t:now,quoted:n,signals:qualifying.length,opened,closed:closedNow,blocked:statusText});
+ data.scanLog=data.scanLog.filter(x=>x.t>=Date.now()-72*3600000).slice(0,1000);
 summary='Última revisión: '+n+' tokens cotizados, '+qualifying.length+' señales confirmadas de mercado, '+opened+' nuevas posiciones virtuales. '+(priceGap?'Entradas bloqueadas por falta de cotización. ':riskExit?'Entradas pausadas en esta revisión tras salida por riesgo. ':'')+date(now)+'. Las señales no equivalen a verificación de seguridad.';
 if(opened===0&&qualifying.length>0&&running){let why=priceGap?'Falta la cotización de una posición existente':riskExit?'Salida por riesgo detectada en esta revisión':data.haltDay===data.day?'Límite de pérdida diaria activado':data.open.length>=MAX_POSITIONS?'Diez posiciones ocupadas':data.cash-RESERVE<MIN_STAKE?'Reserva y caja insuficiente':riskExposure()>=equity()*MAX_TOTAL_STOP_RISK-.75?'Presupuesto conjunto de riesgo agotado':'Pausa del token, tamaño mínimo o cupos de entrada';diagnostics+='<p class="amber"><b>Sin nueva compra:</b> '+esc(why)+'. Una señal favorable no obliga a entrar.</p>';}
 persist();
-}catch(e){decision('ERROR DE DATOS',String(e.message||e).slice(0,280));summary='Revisión fallida; los datos no están actualizados.';diagnostics='<p class="red">Consulta fallida: '+esc(e.message)+'. No se intentaron nuevas compras simuladas.</p>';$('lastError').textContent='Revisión cancelada; sin nuevas operaciones: '+e.message+'. No se inventaron precios ni tipo de cambio.'}
+}catch(e){data.scanLog.unshift({t:Date.now(),error:String(e.message||e).slice(0,300)});data.scanLog=data.scanLog.filter(x=>x.t>=Date.now()-72*3600000).slice(0,1000);persist();decision('ERROR DE DATOS',String(e.message||e).slice(0,280));summary='Revisión fallida; los datos no están actualizados.';diagnostics='<p class="red">Consulta fallida: '+esc(e.message)+'. No se intentaron nuevas compras simuladas.</p>';$('lastError').textContent='Revisión cancelada; sin nuevas operaciones: '+e.message+'. No se inventaron precios ni tipo de cambio.'}
 finally{busy=false;render()}}
 $('start').onclick=()=>{running=true;saveRunning();decision('ACTIVADO','Reanudará análisis cada 15 s mientras la página esté visible.');render();tick()};
 $('stop').onclick=()=>{running=false;saveRunning();decision('DETENIDO','No habrá nuevas entradas mientras esté detenido.');render()};
@@ -375,6 +429,15 @@ $('once').onclick=async()=>{await tick()};
 $('add').onclick=()=>{const m=$('mint').value.trim();if(!isMint(m)){alert('Introduce un mint público válido de Solana');return}if(data.watch.includes(m)){alert('Ya está en observación');return}if(data.watch.length>=10){alert('Máximo 10 mints adicionales');return}data.watch.push(m);$('mint').value='';persist();render()};
 $('watchlist').onclick=e=>{const btn=e.target.closest('button[data-remove]');if(!btn)return;const i=Number(btn.dataset.remove);if(Number.isInteger(i)&&i>=0&&i<data.watch.length){data.watch.splice(i,1);persist();render()}};
 $('reset').onclick=()=>{if(!confirm('¿Borrar todas las posiciones, resultados, observación y retiros VIRTUALES?'))return;running=false;saveRunning();lastPrices={};data=initial();persist();decision('REINICIO','Simulación reiniciada manualmente.');render();$('lastError').textContent='Simulación reiniciada.'};
+$('exportDiagnosis').onclick=()=>{
+ const after=Date.now()-3600000;
+ const rows=[['tipo','fecha','detalle','tokens_cotizados','senales','compras','ventas','resultado_neto_mxn']];
+ for(const scan of (data.scanLog||[]).filter(x=>x.t>=after).slice().reverse())rows.push(['escaneo',new Date(scan.t).toISOString(),scan.error||scan.blocked||'',scan.quoted??'',scan.signals??'',scan.opened??'',scan.closed??'','']);
+ for(const e of data.events.filter(x=>x.t>=after).slice().reverse())rows.push(['operacion',new Date(e.t).toISOString(),e.type+(e.symbol?' '+e.symbol:''),'','',e.type==='COMPRA SIMULADA'?1:0,e.type.startsWith('VENTA SIMULADA')?1:0,e.pnl??'']);
+ const csv=rows.map(row=>row.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');
+ const url=URL.createObjectURL(new Blob(['\ufeff',csv],{type:'text/csv;charset=utf-8'}));
+ const a=document.createElement('a');a.href=url;a.download='solana-diagnostico-ultima-hora.csv';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
 $('export').onclick=()=>{const rows=[['fecha','evento','token','importe_mxn','pnl_neto_mxn'],...data.events.slice().reverse().map(e=>[new Date(e.t).toISOString(),e.type,e.symbol||'',e.amount||0,e.pnl??''])];const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');const url=URL.createObjectURL(new Blob(['\ufeff',csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='solana-simulacion.csv';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)};
 setInterval(()=>{if(running&&!document.hidden)tick()},POLL_MS);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&running)tick()});
