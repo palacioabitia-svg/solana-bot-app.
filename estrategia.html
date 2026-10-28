@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<title>Solana Bot · Scalping 20% V9</title>
+<title>Solana Bot · Radar rotativo V10 · 500 MXN</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}
 body{background:#101116;color:#f5f5f5;font:15px/1.48 system-ui,-apple-system,sans-serif;max-width:840px;margin:auto;padding:22px}
@@ -16,9 +16,9 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 @media(max-width:500px){body{padding:14px}.card{padding:17px}.metrics{gap:8px}.metric{padding:11px}.metric b{font-size:19px}table{font-size:12px}th,td{padding:8px 4px}}
 </style></head><body>
 <p><a href="./index.html">← Wallet</a> · <a href="./radar.html">Radar</a> · <a href="./auditoria.html">Auditoría</a></p>
-<h1>Motor automático · Scalping V9</h1><p class="green"><b>ACTUALIZACIÓN: HASTA 20% DEL CAPITAL POR OPERACIÓN, BENEFICIO NETO EN MXN</b></p><p class="green"><b>VERSIÓN V8 · RUTA ESTABLE</b> · 27 de octubre de 2026</p>
+<h1>Motor automático · Scalping V10</h1><p class="green"><b>CAPITAL DE PRUEBA: $500 MXN VIRTUALES · HASTA 20% POR OPERACIÓN</b></p><p class="green"><b>VERSIÓN V8 · RUTA ESTABLE</b> · 27 de octubre de 2026</p>
 <p class="amber"><b>OBJETIVO ASPIRACIONAL: ACUMULAR GANANCIAS NETAS DE $1–$2 MXN POR OPERACIÓN CON HASTA 20% DE CAPITAL.</b> La rentabilidad es incierta: no se garantizan operaciones frecuentes ni resultados positivos. La meta previa de +$10 por minuto queda solo como referencia comparativa, no como una expectativa.</p>
-<p class="amber"><b>META DE +$10 MXN NETOS POR MINUTO:</b> se conserva como comparación estadística, no como expectativa de resultados. Con $100 MXN y los costos estimados requiere movimientos especialmente grandes y frecuentes; no se garantiza.</p>
+<p class="amber"><b>META DE +$10 MXN NETOS POR MINUTO:</b> se conserva como comparación estadística, no como expectativa de resultados. Con $500 MXN y los costos estimados sigue requiriendo movimientos rápidos y favorables; no se garantiza.</p>
 <p class="amber"><b>CRECIMIENTO POR REINVERSIÓN:</b> las ganancias virtuales aumentan el patrimonio y, con ello, el presupuesto por operación. No hay ganancias aseguradas; puede perderse parte importante del capital.</p>
 <p class="amber"><b>MODO DEMOSTRACIÓN. No usa SOL, no opera en tu wallet y no realiza retiros.</b> Solo utiliza precios públicos de mercado. Las salidas son hipotéticas: un token real podría impedir vender o ejecutarse mucho peor.</p>
 <div class="card"><h2>Control de simulación</h2>
@@ -28,10 +28,10 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <p id="source" class="note">Tipo de cambio USD/MXN: pendiente de consulta.</p><p id="scan-summary" class="note">Sin evaluación de mercado.</p><p id="pace" class="note">Revisiones y operaciones recientes: 0.</p><p class="note">Scalping: busca señales nuevas de precio, compras y volumen aproximadamente cada 10 segundos mientras la página está visible. DexScreener puede repetir datos o bloquear consultas; no ofrece cotizaciones ejecutables.</p><p class="note" id="sources-status">Buscando fuentes de mercado…</p><div id="diagnostics" class="note">Pulsa «Iniciar simulación automática» para consultar el mercado.</div><div id="candidates" class="note" style="overflow-x:auto"></div><details style="margin-top:14px"><summary>Ver las últimas decisiones del bot</summary><div id="decisions" class="note">Sin decisiones registradas.</div></details>
 </div>
 <div class="metrics" aria-label="Resultados simulados">
-<div class="metric"><span>Capital inicial</span><b>$100.00</b><span>MXN simulados</span></div>
+<div class="metric"><span>Capital inicial</span><b>$500.00</b><span>MXN simulados</span></div>
 <div class="metric"><span>Meta neta por operación</span><b>$1–$2</b><span>MXN virtuales después de costos, no garantizados</span></div>
-<div class="metric"><span>Patrimonio estimado</span><b id="equity">$100.00</b><span>MXN; incluye posiciones estimadas</span></div>
-<div class="metric"><span>Disponible</span><b id="cash">$100.00</b><span>MXN de caja simulada</span></div>
+<div class="metric"><span>Patrimonio estimado</span><b id="equity">$500.00</b><span>MXN; incluye posiciones estimadas</span></div>
+<div class="metric"><span>Disponible</span><b id="cash">$500.00</b><span>MXN de caja simulada</span></div>
 <div class="metric"><span>Resultado neto acumulado</span><b id="pnl">$0.00</b><span>MXN; incluye retiros simulados</span></div>
 <div class="metric"><span>Reserva obligatoria</span><b>$0.00</b><span>Hasta 100% de la caja virtual disponible puede invertirse; mayor riesgo</span></div>
 <div class="metric"><span>Posiciones abiertas</span><b id="positions">0 / 10</b><span>Máximo simultáneo</span></div>
@@ -39,7 +39,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <div class="metric"><span>Ganancia/pérdida realizada últimos 10 min</span><b id="tenPnl">$0.00</b><span>MXN simulados, netos de costos estimados</span></div>
 <div class="metric"><span>Retiros virtuales a Bitso</span><b id="payouts">$0.00</b><span>Sin transferencias reales</span></div>
 <div class="metric"><span>Última revisión</span><b id="updated">—</b><span>Solo precio de referencia, no cotización</span></div>
-<div class="metric"><span>Siguiente meta virtual</span><b id="goal">$200.00</b><span>MXN, sin garantía</span></div>
+<div class="metric"><span>Siguiente meta virtual</span><b id="goal">$1,000.00</b><span>MXN, sin garantía</span></div>
 <div class="metric"><span>Progreso de etapa</span><b id="progress">0%</b><span>Incluye retiros simulados</span></div>
 <div class="metric"><span>Pérdida estimada si saltan todos los stops</span><b id="riskTotal">$0.00</b><span>Modelo orientativo; la pérdida puede ser mayor</span></div>
 <div class="metric"><span>Ventas con ganancia / pérdida</span><b id="winloss">0 / 0</b><span>Operaciones cerradas del historial local</span></div>
@@ -54,12 +54,12 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <p id="feeReality" class="amber">Estimación del costo de una operación de tamaño pequeño: pendiente.</p><p id="minuteFeasibility" class="note">Viabilidad de la meta +$10/min: pendiente de cálculo.</p>
 <p id="profitStatistics" class="note"></p>
 <button id="exportDiagnosis" class="secondary">Exportar diagnóstico de la última hora (CSV)</button>
-<p class="note">El registro de escaneos comenzó con la actualización previa del diagnóstico: no podemos recuperar las revisiones anteriores a ese registro desde Phantom. Las operaciones que ya estén guardadas en este navegador sí se incluyen si su fecha corresponde. Incluye decisiones, errores y ventas virtuales. No prueba que esas compras o ventas hubieran sido posibles en la cadena ni constituye un backtest histórico.</p>
+<p class="note">Esta cuenta virtual V10 inicia con $500 MXN y su propio historial, separado de la V9. No se copian las posiciones ni los resultados de versiones anteriores. Las operaciones que ya estén guardadas en este navegador sí se incluyen si su fecha corresponde. Incluye decisiones, errores y ventas virtuales. No prueba que esas compras o ventas hubieran sido posibles en la cadena ni constituye un backtest histórico.</p>
 </div>
 <div class="card">
 <h2>Reglas del simulador · crecimiento con control de pérdidas</h2>
-<p><b>Objetivo por etapas:</b> $100 → $200 → $400 → $800 MXN. No existe garantía de alcanzar ninguna meta. El patrimonio virtual varía con las posiciones y las comisiones.</p>
-<p><b>Hasta 20% del patrimonio por compra virtual</b>, con posibilidad de invertir el <b>100% del capital disponible</b> en varias posiciones si pasan los filtros. Se permiten hasta 10 posiciones como máximo técnico, pero con 20% por entrada normalmente caben unas cinco compras de tamaño completo. <b>No hay reserva obligatoria.</b> La exposición conjunta hipotética hasta los stops se limita al 12% del patrimonio; un salto de precio puede causar pérdidas mayores.</p>
+<p><b>Objetivo por etapas:</b> $500 → $1,000 → $2,000 → $4,000 MXN. No existe garantía de alcanzar ninguna meta. El patrimonio virtual varía con las posiciones y las comisiones.</p>
+<p><b>Hasta 20% del patrimonio por compra virtual (máximo inicial de $100 MXN)</b>, con posibilidad de invertir el <b>100% del capital disponible</b> en varias posiciones si pasan los filtros. Se permiten hasta 10 posiciones como máximo técnico, pero con 20% por entrada normalmente caben unas cinco compras de tamaño completo. <b>No hay reserva obligatoria.</b> La exposición conjunta hipotética hasta los stops se limita al 12% del patrimonio; un salto de precio puede causar pérdidas mayores.</p>
 <p><b>Antes de entrar:</b> liquidez suficiente, presión compradora, tendencia moderadamente positiva y actualización favorable del precio o de las compras/volumen entre dos consultas. Se admiten pares establecidos con más de 30 días; la antigüedad por sí sola no justifica excluirlos. Se intenta revisar el mercado cada 10 segundos mientras la página esté visible; las fuentes pueden retrasarse o limitar las consultas. No se fuerza una operación.</p>
 <p><b>Salidas por deterioro:</b> también cierra virtualmente si la liquidez cae de forma acusada, predominan las ventas o se detecta una caída extrema en 5 minutos. Estas son alertas de mercado, NO una auditoría de seguridad on-chain; puede cerrar tarde y con pérdidas.</p>
 <p><b>Scalping en pesos:</b> busca cerrar cada operación con <b>$1–$2 MXN de ganancia neta simulada</b> una vez deducidos los costos. Puede cerrar desde $1 si el impulso se debilita, o cerca de $2 si continúa. Stop de referencia: caída del precio de <b>6%</b>; también sale por caída de liquidez, presión vendedora o deterioro del movimiento. Tiempo máximo de permanencia simulado: <b>30 minutos</b>. No vende automáticamente solo por cumplirse un minuto, porque hacerlo puede convertir una posición estable en pérdida por comisiones.</p>
@@ -67,7 +67,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <p><b>Protecciones:</b> sin reserva fija, riesgo agregado estimado hasta el 12% del patrimonio si todos los stops funcionaran a su precio de referencia, pausa de entradas si la pérdida diaria estimada llega al 10%, y espera de 30 segundos para reentrar al mismo token vendido. Las pérdidas pueden exceder cualquier límite debido a gaps, fallas de precio o falta de liquidez.</p>
 <p>Al acumular al menos <b>$1,000 MXN de ganancias netas realizadas no retiradas</b>, y si la caja lo permite, registra un <b>retiro exclusivamente virtual</b> a Bitso. No mueve tokens ni dinero real.</p>
 </div>
-<div class="card"><h2>Direcciones adicionales para observar</h2><p class="muted">El motor investiga hasta 145 direcciones de Solana con reparto equilibrado entre 14 consultas a DexScreener; los pares maduros ya no se descartan solo por superar 30 días. Algunas fuentes son promocionadas o resultados de búsqueda; no equivalen a una lista de las mejores monedas ni a una auditoría. Si quieres seguir un token específico, añade su mint público.</p>
+<div class="card"><h2>Direcciones adicionales para observar</h2><p class="muted">El motor rota un universo de hasta 420 tokens distintos por ciclo de descubrimiento, y solicita precios en lotes de hasta 30. Examina hasta 180 direcciones por revisión, prioriza las posiciones abiertas y comunica el número real de tokens distintos que logró revisar. Los límites del proveedor pueden reducir ese número. Algunas fuentes son promocionadas o resultados de búsqueda; no equivalen a una lista de las mejores monedas ni a una auditoría. Si quieres seguir un token específico, añade su mint público.</p>
 <label for="mint">Mint público de Solana</label><input id="mint" type="text" placeholder="Pega la dirección pública del token">
 <button id="add">Agregar a observación</button><div id="watchlist" class="note"></div>
 </div>
@@ -80,11 +80,12 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
-const KEY='solana-paper-scalp-v7-20261027';
-const RUN_KEY='solana-scalp-live-foreground-v8';
-const START=100,RESERVE=0,MAX_POSITIONS=10,MAX_STAKE=.20,MAX_TOTAL_STOP_RISK=.12,STOP=.06,DAILY=.10,MINUTE_GOAL=10,NET_PROFIT_MIN=1,NET_PROFIT_GOAL=2;
+const KEY='solana-paper-500-v10-20261027';
+const RUN_KEY='solana-foreground-500-v10';
+const START=500,RESERVE=0,MAX_POSITIONS=10,MAX_STAKE=.20,MAX_TOTAL_STOP_RISK=.12,STOP=.06,DAILY=.10,MINUTE_GOAL=10,NET_PROFIT_MIN=1,NET_PROFIT_GOAL=2;
 const TRAIL=.04;
 const POLL_MS=10000,COOLDOWN_MS=30000,MAX_HOLD_HOURS=.5,MIN_STAKE=5,MAX_NEW_PER_SCAN=6;
+const MAX_UNIVERSE=420,SCAN_SIZE=180,DISCOVERY_REFRESH_MS=90000;
 const ROUND_COST=.022,GAS=.05,MAX_AGE_MS=7*86400000;
 let running=false,busy=false,fx=null,lastPrices={},lastReview=0,summary='Sin evaluación de mercado.',diagnostics='Todavía no se ha realizado una consulta.',recentScans=[],confirmations=new Map(),observedPrices=new Map(),discoveryCache=null,discoveryAt=0,topCandidates=[],decisionHistory=[],lastDecision='Aún no hay decisiones';
 const money=n=>Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
