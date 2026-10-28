@@ -49,6 +49,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <div class="metric"><span>Consultas API, últimos 60 s</span><b id="requestsAll">0</b><span>Incluye exploración y cambio USD/MXN; sin solicitudes en segundo plano</span></div>
 <div class="metric"><span>Tokens distintos cotizados últimos 60 s</span><b id="uniqueMinute">0</b><span>Direcciones distintas con precios; no significa operaciones</span></div>
 <div class="metric"><span>Evaluaciones de tokens últimos 60 s</span><b id="minuteEvaluations">0</b><span>Incluye tokens repetidos en diferentes revisiones</span></div>
+<div class="metric"><span>Datos de mercado que cambiaron, últimos 60 s</span><b id="minuteChanges">0</b><span>Comparados con la lectura anterior del mismo par; no son transacciones verificadas</span></div>
 <div class="metric"><span>Solicitudes de precios últimos 60 s</span><b id="minuteRequests">0</b><span>Lotes de hasta 30 tokens; los límites pueden reducir la frecuencia</span></div>
 <div class="metric"><span>Compras / ventas virtuales última hora</span><b id="hourTrades">0 / 0</b><span>Operaciones registradas en esta hora</span></div>
 <div class="metric"><span>Resultado neto realizado última hora</span><b id="hourNet">+$0.00</b><span>Ganancias o pérdidas de ventas cerradas</span></div>
@@ -157,6 +158,7 @@ const evaluated=minuteScans.reduce((total,x)=>total+(x.quoted||0),0);
 const requested=minuteScans.reduce((total,x)=>total+(x.requested||0),0);
 $('uniqueMinute').textContent=String(seenMintWindow.size);
 $('minuteEvaluations').textContent=String(evaluated);
+$('minuteChanges').textContent=String(minuteScans.reduce((n,x)=>n+(x.changed||0),0));
 $('minuteRequests').textContent=String(minuteScans.reduce((total,x)=>total+(x.requests||0),0));
 $('coverage').textContent='Últimos 60 s: '+seenMintWindow.size+' tokens distintos realmente cotizados · '+evaluated+' evaluaciones de pares · '+requested+' solicitudes individuales de tokens (pueden repetirse). El conteo de distintos se reinicia al recargar la página.';
 const hr=hourReport();
@@ -284,7 +286,7 @@ return {ok:!reason,score,reason:reason||'Actividad favorable; seguridad on-chain
 function signal(p){return inspectSignal(p).ok}
 function reportMarket(m){
 const reasons={},qualifying=[],now=Date.now(),leaderboard=[];
-let noChange=0,priceUpdates=0,flowUpdates=0,waiting=0;
+let noChange=0,priceUpdates=0,flowUpdates=0,waiting=0,changedSnapshots=0;
 for(const mint of m.mints){
 const p=m.byMint[mint],result=inspectSignal(p);
 if(!p){reasons[result.reason]=(reasons[result.reason]||0)+1;confirmations.delete(mint);continue}
@@ -299,6 +301,7 @@ const volumeDelta=comparable&&volume!==null&&prior.volume!==null?volume-prior.vo
 const risingPrice=comparable&&delta>=.04&&delta<=6;
 const risingFlow=comparable&&delta>=-.04&&delta<.04&&buyDelta!==null&&sellDelta!==null&&volumeDelta!==null&&buyDelta>=2&&buyDelta>Math.max(0,sellDelta)+1&&volumeDelta>=50&&(num(p.priceChange?.m5)||0)>=2;
 const fresh=risingPrice||risingFlow;
+if(comparable&&(price!==prior.price||buys!==prior.buys||sells!==prior.sells||volume!==prior.volume))changedSnapshots++;
 observedPrices.set(mint,{price,pair,at:now,buys,sells,volume});
 const name=String(p.baseToken?.symbol||p.baseToken?.name||'?').slice(0,22);
 let reason=result.reason;
@@ -321,6 +324,7 @@ leaderboard.push({symbol:name,mint,liquidity:num(p.liquidity?.usd)||0,liq:num(p.
 }
 for(const [mint,state] of confirmations){if(now-state.last>180000)confirmations.delete(mint)}
 for(const [mint,state] of observedPrices){if(now-state.at>180000)observedPrices.delete(mint)}
+m.changedSnapshots=changedSnapshots;
 qualifying.sort((a,b)=>b.score-a.score||(num(b.p.liquidity?.usd)||0)-(num(a.p.liquidity?.usd)||0));
 topCandidates=leaderboard.sort((a,b)=>b.score-a.score||b.liq-a.liq).slice(0,12);
 const counts=Object.entries(reasons).sort((a,b)=>b[1]-a[1]).slice(0,6);
@@ -492,7 +496,7 @@ data.lastCheck=now;lastReview=now;recentScans.push(now);
 const riskMsg=priceGap?'No hay cotización del par de una posición':riskExit?'Se cerró posición por riesgo':data.haltDay===data.day?'Pérdida diaria máxima alcanzada':data.open.length>=MAX_POSITIONS?'Máximo de posiciones en uso':data.cash-RESERVE<MIN_STAKE?'Capital disponible insuficiente':riskExposure()>equity()*MAX_TOTAL_STOP_RISK-.75?'Presupuesto de riesgo agotado':'Sin señal de precio/flujo o en espera de enfriamiento';
 decision(opened>0?'ENTRADA SIMULADA':riskExit?'SALIDA POR RIESGO':qualifying.length?'SEÑAL SIN ENTRADA':'SIN SEÑAL',opened>0?opened+' posiciones virtuales abiertas tras revisar '+n+' pares.':riskMsg+'; '+n+' pares consultados, '+qualifying.length+' señales nuevas.');
  const statusText=opened>0?'Compró '+opened:riskMsg;
- data.scanLog.unshift({t:now,quoted:n,requested:m.requested,requests:m.batchCount,universe:m.poolSize,signals:qualifying.length,opened,closed:closedNow,blocked:statusText});
+ data.scanLog.unshift({t:now,quoted:n,changed:m.changedSnapshots||0,requested:m.requested,requests:m.batchCount,universe:m.poolSize,signals:qualifying.length,opened,closed:closedNow,blocked:statusText});
  data.scanLog=data.scanLog.filter(x=>x.t>=Date.now()-4*3600000).slice(0,3600);
 summary='Última revisión: '+n+' tokens cotizados, '+qualifying.length+' señales confirmadas de mercado, '+opened+' nuevas posiciones virtuales. '+(priceGap?'Entradas bloqueadas por falta de cotización. ':riskExit?'Entradas pausadas en esta revisión tras salida por riesgo. ':'')+date(now)+'. Las señales no equivalen a verificación de seguridad.';
 if(opened===0&&qualifying.length>0&&running){let why=priceGap?'Falta la cotización de una posición existente':riskExit?'Salida por riesgo detectada en esta revisión':data.haltDay===data.day?'Límite de pérdida diaria activado':data.open.length>=MAX_POSITIONS?'Diez posiciones ocupadas':data.cash-RESERVE<MIN_STAKE?'Reserva y caja insuficiente':riskExposure()>=equity()*MAX_TOTAL_STOP_RISK-.75?'Presupuesto conjunto de riesgo agotado':'Pausa del token, tamaño mínimo o cupos de entrada';diagnostics+='<p class="amber"><b>Sin nueva compra:</b> '+esc(why)+'. Una señal favorable no obliga a entrar.</p>';}
@@ -516,7 +520,7 @@ $('exportDiagnosis').onclick=()=>{
 };
 $('export').onclick=()=>{const rows=[['fecha','evento','token','importe_mxn','pnl_neto_mxn'],...data.events.slice().reverse().map(e=>[new Date(e.t).toISOString(),e.type,e.symbol||'',e.amount||0,e.pnl??''])];const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');const url=URL.createObjectURL(new Blob(['\ufeff',csv],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download='solana-simulacion.csv';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)};
 setInterval(()=>{if(running&&!document.hidden)tick()},POLL_MS);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden&&running)tick()});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){decision('PAUSA POR PHANTOM','La pestaña ya no está visible; no se ejecutan consultas durante esa pausa.');render()}else if(running){decision('REANUDADO','Phantom volvió a estar visible; se retoman las consultas.');render();tick()}else render()});
 try{running=localStorage.getItem(RUN_KEY)==='1'}catch{}
 if(running)decision('REANUDADO','Se retomó la simulación guardada. Solo se ejecuta con esta página visible.');
 render();if(running&&!document.hidden)tick();
