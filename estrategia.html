@@ -25,7 +25,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <button id="start">Iniciar simulación automática</button><button id="stop" class="secondary">Detener</button><button id="once" class="secondary">Ejecutar revisión ahora</button>
 <p id="state" class="muted">Detenida. Los datos guardados solo están en este navegador.</p><p id="lastDecision" class="amber">Última decisión: sin escanear.</p><p id="healthStatus" class="note">Estado del escaneo: todavía no se ha revisado el mercado.</p><p id="topError" class="red"></p>
 <p class="note">Cuando está activa, intenta consultar cada <b>10 segundos (hasta 6 revisiones por minuto)</b> solo con esta página abierta y visible. Puede abrir posiciones virtuales cuando observa un precio que se mueve al alza entre consultas y cumple los filtros de actividad, riesgo y capital. No opera por obligación. Al cerrarla deja de trabajar. No es un bot de ejecución permanente.</p>
-<p id="source" class="note">Tipo de cambio USD/MXN: pendiente de consulta.</p><p id="scan-summary" class="note">Sin evaluación de mercado.</p><p id="pace" class="note">Revisiones y operaciones recientes: 0.</p><p class="note">Scalping: busca señales nuevas de precio, compras y volumen aproximadamente cada 10 segundos mientras la página está visible. DexScreener puede repetir datos o bloquear consultas; no ofrece cotizaciones ejecutables.</p><p class="note" id="sources-status">Buscando fuentes de mercado…</p><div id="diagnostics" class="note">Pulsa «Iniciar simulación automática» para consultar el mercado.</div><div id="candidates" class="note" style="overflow-x:auto"></div><details style="margin-top:14px"><summary>Ver las últimas decisiones del bot</summary><div id="decisions" class="note">Sin decisiones registradas.</div></details>
+<p id="source" class="note">Tipo de cambio USD/MXN: pendiente de consulta.</p><p id="scan-summary" class="note">Sin evaluación de mercado.</p><p id="pace" class="note">Revisiones y operaciones recientes: 0.</p><p id="coverage" class="note">Cobertura del radar: pendiente de la primera revisión.</p><p class="note">Scalping: busca señales nuevas de precio, compras y volumen aproximadamente cada 10 segundos mientras la página está visible. DexScreener puede repetir datos o bloquear consultas; no ofrece cotizaciones ejecutables.</p><p class="note" id="sources-status">Buscando fuentes de mercado…</p><div id="diagnostics" class="note">Pulsa «Iniciar simulación automática» para consultar el mercado.</div><div id="candidates" class="note" style="overflow-x:auto"></div><details style="margin-top:14px"><summary>Ver las últimas decisiones del bot</summary><div id="decisions" class="note">Sin decisiones registradas.</div></details>
 </div>
 <div class="metrics" aria-label="Resultados simulados">
 <div class="metric"><span>Capital inicial</span><b>$500.00</b><span>MXN simulados</span></div>
@@ -44,6 +44,9 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <div class="metric"><span>Pérdida estimada si saltan todos los stops</span><b id="riskTotal">$0.00</b><span>Modelo orientativo; la pérdida puede ser mayor</span></div>
 <div class="metric"><span>Ventas con ganancia / pérdida</span><b id="winloss">0 / 0</b><span>Operaciones cerradas del historial local</span></div>
 <div class="metric"><span>Escaneos válidos últimos 60 min</span><b id="hourScans">0</b><span>Consultas válidas, no operaciones</span></div>
+<div class="metric"><span>Tokens distintos cotizados últimos 60 s</span><b id="uniqueMinute">0</b><span>Direcciones distintas con precios; no significa operaciones</span></div>
+<div class="metric"><span>Evaluaciones de tokens últimos 60 s</span><b id="minuteEvaluations">0</b><span>Incluye tokens repetidos en diferentes revisiones</span></div>
+<div class="metric"><span>Solicitudes de precios últimos 60 s</span><b id="minuteRequests">0</b><span>Lotes de hasta 30 tokens; los límites pueden reducir la frecuencia</span></div>
 <div class="metric"><span>Compras / ventas virtuales última hora</span><b id="hourTrades">0 / 0</b><span>Operaciones registradas en esta hora</span></div>
 <div class="metric"><span>Resultado neto realizado última hora</span><b id="hourNet">+$0.00</b><span>Ganancias o pérdidas de ventas cerradas</span></div>
 <div class="metric"><span>Equilibrio de una operación pequeña</span><b id="breakEven">—</b><span>Subida requerida según costos estimados</span></div>
@@ -142,6 +145,15 @@ function decision(status,message){lastDecision=status+' · '+message;decisionHis
 function saveRunning(){try{localStorage.setItem(RUN_KEY,running?'1':'0')}catch{}}
 function render(){
 $('scan-summary').textContent=summary;
+const minuteSince=Date.now()-60000;
+for(const [mint,last] of seenMintWindow){if(last<minuteSince)seenMintWindow.delete(mint)}
+const minuteScans=(data.scanLog||[]).filter(x=>x.t>=minuteSince&&!x.error);
+const evaluated=minuteScans.reduce((total,x)=>total+(x.quoted||0),0);
+const requested=minuteScans.reduce((total,x)=>total+(x.requested||0),0);
+$('uniqueMinute').textContent=String(seenMintWindow.size);
+$('minuteEvaluations').textContent=String(evaluated);
+$('minuteRequests').textContent=String(minuteScans.reduce((total,x)=>total+(x.requests||0),0));
+$('coverage').textContent='Últimos 60 s: '+seenMintWindow.size+' tokens distintos realmente cotizados · '+evaluated+' evaluaciones de pares · '+requested+' solicitudes individuales de tokens (pueden repetirse). El conteo de distintos se reinicia al recargar la página.';
 const hr=hourReport();
 $('hourScans').textContent=String(hr.valid);
 $('hourTrades').textContent=hr.buy+' / '+hr.sell;
@@ -407,6 +419,8 @@ const rate=(await getFx()).rate;refreshDay();
 const m=await market(),now=Date.now(),prices={};let n=0,opened=0,priceGap=false,riskExit=false;const qualifying=reportMarket(m);
 for(const [mint,p] of Object.entries(m.byMint)){const price=num(p.priceUsd);if(price>0){prices[mint]={price,pair:p.pairAddress,at:now};n++}}
 lastPrices=prices;
+for(const mint of Object.keys(m.byMint))seenMintWindow.set(mint,now);
+for(const [mint,time] of seenMintWindow){if(time<now-60000)seenMintWindow.delete(mint)}
 for(const pos of [...data.open]){
 const p=m.byMint[pos.mint],quote=prices[pos.mint];
 if(!p||!quote||quote.pair!==pos.pair){priceGap=true;$('lastError').textContent='Algunas posiciones no tienen cotización del mismo par: se mantienen sin valorar ni cerrar.';continue}
@@ -444,7 +458,7 @@ data.lastCheck=now;lastReview=now;recentScans.push(now);
 const riskMsg=priceGap?'No hay cotización del par de una posición':riskExit?'Se cerró posición por riesgo':data.haltDay===data.day?'Pérdida diaria máxima alcanzada':data.open.length>=MAX_POSITIONS?'Máximo de posiciones en uso':data.cash-RESERVE<MIN_STAKE?'Capital disponible insuficiente':riskExposure()>equity()*MAX_TOTAL_STOP_RISK-.75?'Presupuesto de riesgo agotado':'Sin señal de precio/flujo o en espera de enfriamiento';
 decision(opened>0?'ENTRADA SIMULADA':riskExit?'SALIDA POR RIESGO':qualifying.length?'SEÑAL SIN ENTRADA':'SIN SEÑAL',opened>0?opened+' posiciones virtuales abiertas tras revisar '+n+' pares.':riskMsg+'; '+n+' pares consultados, '+qualifying.length+' señales nuevas.');
  const statusText=opened>0?'Compró '+opened:riskMsg;
- data.scanLog.unshift({t:now,quoted:n,signals:qualifying.length,opened,closed:closedNow,blocked:statusText});
+ data.scanLog.unshift({t:now,quoted:n,requested:m.requested,requests:m.batchCount,universe:m.poolSize,signals:qualifying.length,opened,closed:closedNow,blocked:statusText});
  data.scanLog=data.scanLog.filter(x=>x.t>=Date.now()-72*3600000).slice(0,1000);
 summary='Última revisión: '+n+' tokens cotizados, '+qualifying.length+' señales confirmadas de mercado, '+opened+' nuevas posiciones virtuales. '+(priceGap?'Entradas bloqueadas por falta de cotización. ':riskExit?'Entradas pausadas en esta revisión tras salida por riesgo. ':'')+date(now)+'. Las señales no equivalen a verificación de seguridad.';
 if(opened===0&&qualifying.length>0&&running){let why=priceGap?'Falta la cotización de una posición existente':riskExit?'Salida por riesgo detectada en esta revisión':data.haltDay===data.day?'Límite de pérdida diaria activado':data.open.length>=MAX_POSITIONS?'Diez posiciones ocupadas':data.cash-RESERVE<MIN_STAKE?'Reserva y caja insuficiente':riskExposure()>=equity()*MAX_TOTAL_STOP_RISK-.75?'Presupuesto conjunto de riesgo agotado':'Pausa del token, tamaño mínimo o cupos de entrada';diagnostics+='<p class="amber"><b>Sin nueva compra:</b> '+esc(why)+'. Una señal favorable no obliga a entrar.</p>';}
