@@ -47,7 +47,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <div class="card">
 <h2>Reglas de la reconstrucción V8</h2>
 <p><b>Capital inicial: $500 MXN virtuales.</b> Hasta <b>20% del patrimonio por compra simulada</b>, sin reserva fija; las entradas no son obligatorias ni garantizan ganancias.</p>
-<p><b>Radar:</b> consulta precios públicos reales desde DexScreener para hasta 180 tokens por revisión, rotando un universo de hasta 420 direcciones recogidas de 14 fuentes. <b>Filtros adicionales:</b> Raydium, PumpSwap y Meteora (también Orca); liquidez desde USD 50,000, volumen 24h desde USD 100,000, antigüedad de 1 hora a 30 días, actividad compradora y puntuación de al menos 62/100. Intenta iniciar una revisión cada 5 segundos con la página visible; el proveedor puede retrasar o bloquear peticiones. El contador muestra evaluaciones repetidas y tokens distintos por separado.</p>
+<p><b>Radar:</b> consulta precios públicos reales desde DexScreener para hasta 180 tokens por revisión, rotando un universo de hasta 420 direcciones recogidas de 14 fuentes. <b>Filtros adicionales:</b> Raydium, PumpSwap y Meteora (también Orca); liquidez desde USD 50,000, volumen 24h desde USD 100,000, antigüedad mínima de 1 hora, actividad compradora y puntuación de al menos 62/100. Intenta iniciar una revisión cada 5 segundos con la página visible; el proveedor puede retrasar o bloquear peticiones. El contador muestra evaluaciones repetidas y tokens distintos por separado.</p>
 <p><b>Salidas:</b> busca $1–$2 MXN netos simulados después de los costos estimados, stop de referencia del 6% en el precio y permanencia máxima de 30 minutos. No es posible garantizar ejecución de venta ni ganancia real.</p>
 <p><b>Protecciones:</b> exposición conjunta estimada al stop de hasta 12% del patrimonio y pausa de nuevas entradas si el patrimonio cae 10% frente al comienzo del día. Un desplome súbito puede superar el límite.</p>
 <p><b>Nota:</b> mantiene únicamente el diseño y flujo de la V8 funcional; utiliza almacenamiento local nuevo para no modificar los saldos e historiales anteriores. Este motor no ejecuta compras con SOL real ni continúa con Phantom cerrado.</p>
@@ -69,7 +69,7 @@ const KEY='solana-v8-pro-500-20261027';
 const RUN_KEY='solana-v8-pro-run';
 const START=500,RESERVE=0,MAX_POSITIONS=10,MAX_STAKE=.20,MAX_TOTAL_STOP_RISK=.12,STOP=.06,TRAIL=.04,DAILY=.10,MINUTE_GOAL=10,NET_PROFIT_MIN=1,NET_PROFIT_GOAL=2;
 const POLL_MS=5000,COOLDOWN_MS=30000,MAX_HOLD_HOURS=.5,MIN_STAKE=5,MAX_NEW_PER_SCAN=6;
-const SCAN_SIZE=180,MAX_UNIVERSE=420,DISCOVERY_INTERVAL=120000,MIN_LIQ_USD=50000,MIN_VOL_24=100000,MIN_SCORE=62,MIN_POOL_AGE_MIN=60,MAX_POOL_AGE_DAYS=30,MAX_SPREAD_PROXY=.06;
+const SCAN_SIZE=180,MAX_UNIVERSE=420,DISCOVERY_INTERVAL=120000,MIN_LIQ_USD=50000,MIN_VOL_24=100000,MIN_SCORE=62,MIN_POOL_AGE_MIN=60;
 const DEX_ALLOW=/raydium|pump|meteora|orca/i,BASE_IMPACT=.004,MAX_IMPACT=.03;
 const ROUND_COST=.022,GAS=.05,MAX_AGE_MS=7*86400000;
 let running=false,busy=false,fx=null,lastPrices={},lastReview=0,summary='Sin evaluación de mercado.',diagnostics='Todavía no se ha realizado una consulta.',recentScans=[],confirmations=new Map(),observedPrices=new Map(),discoveryCache=null,discoveryAt=0,discoveryPromise=null,discoveryError='',backoffUntil=0,scanCursor=0,minuteQuotes=[],minuteDistinct=new Map(),apiErrorCount=0,lastCycleMs=0,topCandidates=[],decisionHistory=[],lastDecision='Aún no hay decisiones';
@@ -132,7 +132,7 @@ $('state').textContent=busy?'Consultando fuentes de mercado…':running?(data.ha
 $('start').disabled=running;$('stop').disabled=!running;
 $('watchlist').innerHTML=data.watch.length?data.watch.map((m,i)=>'<p><code>'+esc(m)+'</code> <button class="secondary mini" data-remove="'+i+'">Quitar</button></p>').join(''):'<p>No hay tokens adicionales.</p>';
 $('open').innerHTML=data.open.length?'<table><thead><tr><th>Token</th><th>Invertido</th><th>Valor salida estimado</th><th>PnL</th></tr></thead><tbody>'+
-data.open.map(p=>{const mark=lastPrices[p.mint];const value=mark&&mark.pair===p.pair&&fx?exitValue(p.qty,mark.price,fx.rate):null;
+data.open.map(p=>{const mark=lastPrices[p.mint];const value=mark&&mark.pair===p.pair&&fx?exitValue(p.qty,mark.price,fx.rate,mark.liq):null;
 return '<tr><td><b>'+esc(p.symbol)+'</b><br><small>'+date(p.opened)+'</small><br><a href="./auditoria.html?mint='+encodeURIComponent(p.mint)+'">Auditar token</a></td><td>$'+money(p.cost)+'</td><td>'+(value===null?'Sin cotización fresca':'$'+money(value))+'</td><td>'+(value===null?'ND':(value-p.cost>=0?'+':'')+'$'+money(value-p.cost))+'</td></tr>'}).join('')+'</tbody></table>':'No hay posiciones simuladas.';
 $('history').innerHTML=data.events.length?'<div style="overflow-x:auto"><table><thead><tr><th>Fecha</th><th>Evento</th><th>Token</th><th>Capital</th><th>PnL neto</th></tr></thead><tbody>'+
 data.events.slice(0,80).map(e=>'<tr><td>'+date(e.t)+'</td><td>'+esc(e.type)+'</td><td>'+esc(e.symbol||'—')+'</td><td>$'+money(e.amount||0)+'</td><td>'+(e.pnl===undefined?'—':(e.pnl>=0?'+':'')+'$'+money(e.pnl))+'</td></tr>').join('')+'</tbody></table></div>':'Sin operaciones.';
@@ -164,30 +164,34 @@ throw Error('No fue posible consultar USD/MXN: '+errors.join(' | '));
 function pairsFor(token,all){const valid=all.filter(p=>p.chainId==='solana'&&p.baseToken?.address===token&&num(p.priceUsd)>0&&num(p.liquidity?.usd)>0);
 valid.sort((a,b)=>(num(b.liquidity?.usd)||0)-(num(a.liquidity?.usd)||0));return valid[0]||null}
 function inspectSignal(p){
-if(!p)return {ok:false,score:0,reason:'Sin cotización válida'};
-const q={liq:num(p.liquidity?.usd),vol24:num(p.volume?.h24),vol5:num(p.volume?.m5),m5:num(p.priceChange?.m5),h1:num(p.priceChange?.h1),h24:num(p.priceChange?.h24),buys:num(p.txns?.m5?.buys),sells:num(p.txns?.m5?.sells),created:num(p.pairCreatedAt)};
-if(Object.values(q).some(v=>v===null))return {ok:false,score:0,reason:'Datos incompletos'};
-const age=(Date.now()-q.created)/3600000;
-let reason='';
-if(age<.25)reason='Menos de 15 min de antigüedad';
-else if(q.liq<18000)reason='Liquidez inferior a USD 18,000';
-else if(q.vol5<300||q.vol24<3500)reason='Volumen insuficiente';
-else if(q.vol24/q.liq<.12||q.vol24/q.liq>35)reason='Rotación anómala';
-else if(q.m5<.3||q.m5>17)reason='Tendencia de 5 min no favorable';
-else if(q.h1<1||q.h1>70)reason='Tendencia de 1 h no favorable';
-else if(q.h24< -35||q.h24>220)reason='Tendencia diaria excesiva';
-else if(q.buys+q.sells<10||q.sells<3)reason='Pocas ventas para evaluar salida';
-else if(q.buys<q.sells*1.08)reason='Presión compradora insuficiente';
-const buyRatio=q.buys/Math.max(1,q.sells);
-const score=Math.min(100,Math.round(
-Math.min(1,q.liq/90000)*22+
-Math.min(1,q.vol5/4200)*20+
-Math.min(2.2,buyRatio)/2.2*22+
-Math.min(1,q.m5/7)*18+
-Math.min(1,q.h1/18)*14+
-Math.min(1,age/24)*4));
-if(!reason&&score<40)reason='Puntuación de actividad inferior al mínimo';
-return {ok:!reason,score,reason:reason||'Actividad favorable; seguridad on-chain no auditada'}
+ if(!p)return {ok:false,score:0,reason:'Sin cotización válida'};
+ const q={liq:num(p.liquidity?.usd),vol24:num(p.volume?.h24),vol5:num(p.volume?.m5),m5:num(p.priceChange?.m5),h1:num(p.priceChange?.h1),h24:num(p.priceChange?.h24),buys:num(p.txns?.m5?.buys),sells:num(p.txns?.m5?.sells),created:num(p.pairCreatedAt),fdv:num(p.fdv),cap:num(p.marketCap)};
+ if([q.liq,q.vol24,q.vol5,q.m5,q.h1,q.h24,q.buys,q.sells,q.created].some(v=>v===null))return {ok:false,score:0,reason:'Datos incompletos'};
+ const age=(Date.now()-q.created)/60000,dex=String(p.dexId||'').toLowerCase();
+ const quote=String(p.quoteToken?.symbol||'').toUpperCase();
+ const buyRatio=q.buys/Math.max(1,q.sells);
+ let reason='';
+ if(!DEX_ALLOW.test(dex))reason='Exchange no incluido o sin identificar';
+ else if(!['SOL','WSOL','USDC','USDT'].includes(quote))reason='Par sin token cotizado conocido';
+ else if(age<MIN_POOL_AGE_MIN)reason='Pool con menos de 1 hora';
+ else if(q.liq<MIN_LIQ_USD)reason='Liquidez insuficiente';
+ else if(q.vol24<MIN_VOL_24||q.vol5<600)reason='Volumen insuficiente';
+ else if(q.vol24/q.liq<.2||q.vol24/q.liq>30)reason='Rotación fuera de rango';
+ else if(q.m5<.4||q.m5>12)reason='Impulso de 5 minutos desfavorable o extremo';
+ else if(q.h1<1||q.h1>55)reason='Tendencia de 1 hora desfavorable o extrema';
+ else if(q.h24< -35||q.h24>175)reason='Variación diaria fuera de rango';
+ else if(q.buys+q.sells<16||q.sells<4)reason='Historial de ventas insuficiente';
+ else if(buyRatio<1.2)reason='Presión compradora insuficiente';
+ else if(q.fdv!==null&&q.fdv>0&&q.fdv/q.liq>1000)reason='Valoración excesiva frente a liquidez';
+ const score=Math.min(100,Math.round(
+ Math.min(1,q.liq/120000)*24+
+ Math.min(1,q.vol5/6000)*22+
+ Math.min(2.5,buyRatio)/2.5*20+
+ Math.min(1,q.m5/8)*16+
+ Math.min(1,q.h1/20)*14+
+ Math.min(1,age/1440)*4));
+ if(!reason&&score<MIN_SCORE)reason='Puntuación menor al mínimo';
+ return {ok:!reason,score,reason:reason||'Liquidez y flujo favorables; seguridad de token no auditada'}
 }
 function signal(p){return inspectSignal(p).ok}
 function reportMarket(m){
@@ -302,25 +306,26 @@ function openTrade(mint,p,rate){
 if(data.open.some(t=>t.mint===mint)||data.open.length>=MAX_POSITIONS||(data.cooldowns[mint]&&Date.now()-data.cooldowns[mint]<COOLDOWN_MS))return false;
 const usable=data.cash-RESERVE,eq=equity();
 const remainingRisk=eq*MAX_TOTAL_STOP_RISK-riskExposure();
-const stopFactor=(1-STOP)*(1-ROUND_COST)/(1+ROUND_COST);
+const stopFactor=(1-STOP)*(1-ROUND_COST-MAX_IMPACT)/(1+ROUND_COST+MAX_IMPACT);
 const maxStakeRisk=(remainingRisk-GAS*(1+stopFactor))/(1-stopFactor);
 const stake=Math.min(usable,eq*MAX_STAKE,maxStakeRisk);
 const price=num(p.priceUsd);
 if(!price||!Number.isFinite(stake)||stake<MIN_STAKE||!p.pairAddress||!Number.isFinite(rate)||rate<=0)return false;
-const qty=(stake-GAS)/(price*rate*(1+ROUND_COST));
+const impact=priceImpact(stake,num(p.liquidity?.usd),rate);
+const qty=(stake-GAS)/(price*rate*(1+ROUND_COST+impact));
 if(!Number.isFinite(qty)||qty<=0||data.cash-stake<RESERVE-.000001)return false;
 data.cash-=stake;
-data.open.push({mint,pair:p.pairAddress,symbol:String(p.baseToken?.symbol||'?').slice(0,30),opened:Date.now(),cost:stake,qty,entryPrice:price,entryFx:rate,entryLiquidity:num(p.liquidity?.usd),peak:price});
+data.open.push({mint,pair:p.pairAddress,symbol:String(p.baseToken?.symbol||'?').slice(0,30),opened:Date.now(),cost:stake,qty,entryPrice:price,entryFx:rate,entryLiquidity:num(p.liquidity?.usd),currentLiquidity:num(p.liquidity?.usd),entryImpact:impact,score:inspectSignal(p).score,peak:price});
 confirmations.delete(mint);
-record({t:Date.now(),type:'COMPRA SIMULADA',symbol:p.baseToken?.symbol,amount:stake});
+record({t:Date.now(),type:'COMPRA SIMULADA',symbol:p.baseToken?.symbol,amount:stake,score:inspectSignal(p).score,impactPct:impact*100,priceUsd:price});
 return true
 }
 function closeTrade(p,price,rate,reason){
-const proceeds=exitValue(p.qty,price,rate);
+const proceeds=exitValue(p.qty,price,rate,p.currentLiquidity);
 const pnl=proceeds-p.cost;
 data.cash+=proceeds;data.realizedNet+=pnl;data.cooldowns[p.mint]=Date.now();
 data.open=data.open.filter(o=>o!==p);confirmations.delete(p.mint);
-record({t:Date.now(),type:'VENTA SIMULADA · '+reason,symbol:p.symbol,amount:proceeds,pnl});
+record({t:Date.now(),type:'VENTA SIMULADA · '+reason,symbol:p.symbol,amount:proceeds,pnl,score:p.score,priceUsd:price,impactPct:priceImpact(p.qty*price*rate,p.currentLiquidity,rate)*100});
 }
 
 function maybeVirtualPayout(){
@@ -340,26 +345,26 @@ try{
 const rate=(await getFx()).rate;refreshDay();
 const m=await market(),now=Date.now(),prices={};let n=0,opened=0,priceGap=false,riskExit=false;const qualifying=reportMarket(m);
 for(const mint of Object.keys(m.byMint))minuteDistinct.set(mint,now);minuteQuotes.push({at:now,count:Object.keys(m.byMint).length});
-for(const [mint,p] of Object.entries(m.byMint)){const price=num(p.priceUsd);if(price>0){prices[mint]={price,pair:p.pairAddress,at:now};n++}}
+for(const [mint,p] of Object.entries(m.byMint)){const price=num(p.priceUsd);if(price>0){prices[mint]={price,pair:p.pairAddress,at:now,liq:num(p.liquidity?.usd)};n++}}
 lastPrices=prices;
 for(const pos of [...data.open]){
 const p=m.byMint[pos.mint],quote=prices[pos.mint];
 if(!p||!quote||quote.pair!==pos.pair){priceGap=true;$('lastError').textContent='Algunas posiciones no tienen cotización del mismo par: se mantienen sin valorar ni cerrar.';continue}
 const price=quote.price;pos.peak=Math.max(pos.peak,price);
-const factor=price/pos.entryPrice,net=(exitValue(pos.qty,price,rate)-pos.cost)/pos.cost;
-const peakNet=(exitValue(pos.qty,pos.peak,rate)-pos.cost)/pos.cost;
+const factor=price/pos.entryPrice,net=(exitValue(pos.qty,price,rate,pos.currentLiquidity)-pos.cost)/pos.cost;
+const peakNet=(exitValue(pos.qty,pos.peak,rate,pos.currentLiquidity)-pos.cost)/pos.cost;
 const hours=(now-pos.opened)/3600000;
 const buys=num(p.txns?.m5?.buys),sells=num(p.txns?.m5?.sells),fiveMin=num(p.priceChange?.m5);
-const liq=num(p.liquidity?.usd),oldLiq=num(pos.entryLiquidity);
+const liq=num(p.liquidity?.usd),oldLiq=num(pos.entryLiquidity);pos.currentLiquidity=liq;
 const liquidityWarning=liq!==null&&((oldLiq!==null&&oldLiq>0&&liq<oldLiq*.6)||liq<12000);
 const sellPressure=buys!==null&&sells!==null&&sells>=5&&((sells>Math.max(1,buys)*1.9&&fiveMin!==null&&fiveMin< -1)||(sells>Math.max(1,buys)*1.35&&fiveMin!==null&&fiveMin< -5));
 const marketReversal=fiveMin!==null&&fiveMin<=-9;
 if(factor<=1-STOP){closeTrade(pos,price,rate,'STOP · PÉRDIDA REFERENCIAL');riskExit=true;}
 else if(liquidityWarning){closeTrade(pos,price,rate,'RIESGO · CAÍDA DE LIQUIDEZ');riskExit=true;}
 else if(sellPressure||marketReversal){closeTrade(pos,price,rate,'RIESGO · PRESIÓN VENDEDORA');riskExit=true;}
-else if(exitValue(pos.qty,price,rate)-pos.cost>=NET_PROFIT_GOAL)closeTrade(pos,price,rate,'SCALPING · $2+ NETOS');
-else if(exitValue(pos.qty,price,rate)-pos.cost>=NET_PROFIT_MIN&&((fiveMin!==null&&fiveMin<1)||(buys!==null&&sells!==null&&sells>buys*1.1)||hours>=3/60))closeTrade(pos,price,rate,'SCALPING · $1+ NETO');
-else if(exitValue(pos.qty,pos.peak,rate)-pos.cost>=NET_PROFIT_MIN&&price<=pos.peak*(1-TRAIL))closeTrade(pos,price,rate,'SCALPING · SEGUIMIENTO');
+else if(exitValue(pos.qty,price,rate,pos.currentLiquidity)-pos.cost>=NET_PROFIT_GOAL)closeTrade(pos,price,rate,'SCALPING · $2+ NETOS');
+else if(exitValue(pos.qty,price,rate,pos.currentLiquidity)-pos.cost>=NET_PROFIT_MIN&&((fiveMin!==null&&fiveMin<1)||(buys!==null&&sells!==null&&sells>buys*1.1)||hours>=3/60))closeTrade(pos,price,rate,'SCALPING · $1+ NETO');
+else if(exitValue(pos.qty,pos.peak,rate,pos.currentLiquidity)-pos.cost>=NET_PROFIT_MIN&&price<=pos.peak*(1-TRAIL))closeTrade(pos,price,rate,'SCALPING · SEGUIMIENTO');
 else if(hours>=MAX_HOLD_HOURS)closeTrade(pos,price,rate,'TIEMPO MÁXIMO 30 MIN');
 }
 maybeVirtualPayout();
