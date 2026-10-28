@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<title>Solana Bot · Radar acelerado V11 · 500 MXN</title>
+<title>Solana Bot · Radar paralelo V12 · 500 MXN</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}
 body{background:#101116;color:#f5f5f5;font:15px/1.48 system-ui,-apple-system,sans-serif;max-width:840px;margin:auto;padding:22px}
@@ -16,7 +16,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 @media(max-width:500px){body{padding:14px}.card{padding:17px}.metrics{gap:8px}.metric{padding:11px}.metric b{font-size:19px}table{font-size:12px}th,td{padding:8px 4px}}
 </style></head><body>
 <p><a href="./index.html">← Wallet</a> · <a href="./radar.html">Radar</a> · <a href="./auditoria.html">Auditoría</a></p>
-<h1>Motor automático · Scalping V11</h1><p class="green"><b>V11 · $500 VIRTUALES · ANÁLISIS ACELERADO Y DATOS REALES DE DEXSCREENER</b></p><p class="green"><b>V11 · ESCANEO ACELERADO EN RUTA ESTABLE</b></p>
+<h1>Motor automático · Scalping V12</h1><p class="green"><b>V12 · $500 VIRTUALES · COTIZACIONES Y DESCUBRIMIENTO SIMULTÁNEOS</b></p><p class="green"><b>V11 · ESCANEO ACELERADO EN RUTA ESTABLE</b></p>
 <p class="amber"><b>OBJETIVO ASPIRACIONAL: ACUMULAR GANANCIAS NETAS DE $1–$2 MXN POR OPERACIÓN CON HASTA 20% DE CAPITAL.</b> La rentabilidad es incierta: no se garantizan operaciones frecuentes ni resultados positivos. La meta previa de +$10 por minuto queda solo como referencia comparativa, no como una expectativa.</p>
 <p class="amber"><b>META DE +$10 MXN NETOS POR MINUTO:</b> se conserva como comparación estadística, no como expectativa de resultados. Con $500 MXN y los costos estimados sigue requiriendo movimientos rápidos y favorables; no se garantiza.</p>
 <p class="amber"><b>CRECIMIENTO POR REINVERSIÓN:</b> las ganancias virtuales aumentan el patrimonio y, con ello, el presupuesto por operación. No hay ganancias aseguradas; puede perderse parte importante del capital.</p>
@@ -96,7 +96,7 @@ const BACKOFF_MS=30000,MAX_API_BATCHES_PER_SCAN=6;
 // Límites publicados por DexScreener: consultas de pares 300 solicitudes/min; no son cotizaciones ejecutables.
 const MAX_UNIVERSE=420,SCAN_SIZE=180,DISCOVERY_REFRESH_MS=90000;
 const ROUND_COST=.022,GAS=.05,MAX_AGE_MS=7*86400000;
-let running=false,busy=false,fx=null,lastPrices={},lastReview=0,summary='Sin evaluación de mercado.',diagnostics='Todavía no se ha realizado una consulta.',recentScans=[],confirmations=new Map(),observedPrices=new Map(),discoveryCache=null,discoveryAt=0,scanCursor=0,seenMintWindow=new Map(),topCandidates=[],decisionHistory=[],lastDecision='Aún no hay decisiones',backoffUntil=0,lastCycleMs=0,lastErrorStatus='',apiRequestLog=[],tickSkipped=0;
+let running=false,busy=false,fx=null,lastPrices={},lastReview=0,summary='Sin evaluación de mercado.',diagnostics='Todavía no se ha realizado una consulta.',recentScans=[],confirmations=new Map(),observedPrices=new Map(),discoveryCache=null,discoveryAt=0,discoveryPromise=null,discoveryLastError='',scanCursor=0,seenMintWindow=new Map(),topCandidates=[],decisionHistory=[],lastDecision='Aún no hay decisiones',backoffUntil=0,lastCycleMs=0,lastErrorStatus='',apiRequestLog=[],tickSkipped=0;
 const money=n=>Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
 const signedMoney=n=>(n<0?'-$':'+$')+money(Math.abs(n));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -337,9 +337,7 @@ diagnostics='<p><b>Escaneados:</b> '+m.mints.length+' tokens · '+Object.keys(m.
 return qualifying
 }
 
-async function market(){
-const now=Date.now();
-if(!discoveryCache||now-discoveryAt>DISCOVERY_REFRESH_MS){
+async function refreshDiscovery(){
 const feedSpecs=[
 {label:'Perfiles recientes',url:'https://api.dexscreener.com/token-profiles/latest/v1',kind:'tokens'},
 {label:'Boosts destacados (publicidad pagada)',url:'https://api.dexscreener.com/token-boosts/top/v1',kind:'tokens'},
@@ -359,22 +357,36 @@ const feedSpecs=[
 const responses=await Promise.allSettled(feedSpecs.map(f=>json(f.url)));
 const sources=[],groups=[],failures=[];
 for(let i=0;i<responses.length;i++){
-const r=responses[i],spec=feedSpecs[i];
-if(r.status==='fulfilled'){
-const found=spec.kind==='pairs'?r.value?.pairs:r.value;
-if(Array.isArray(found)){
-const mints=[...new Set(found.filter(p=>p.chainId==='solana')
-.map(p=>spec.kind==='pairs'?p.baseToken?.address:p.tokenAddress).filter(isMint))].slice(0,30);
-groups.push(mints);sources.push({label:spec.label,n:mints.length});continue;
-}
-}
-const why=r.status==='rejected'?String(r.reason?.message||r.reason):'Respuesta inválida';
-failures.push(spec.label+': '+why);groups.push([]);sources.push({label:spec.label,n:0,error:true});
+ const r=responses[i],spec=feedSpecs[i];
+ if(r.status==='fulfilled'){
+  const found=spec.kind==='pairs'?r.value?.pairs:r.value;
+  if(Array.isArray(found)){
+   const mints=[...new Set(found.filter(p=>p.chainId==='solana')
+   .map(p=>spec.kind==='pairs'?p.baseToken?.address:p.tokenAddress).filter(isMint))].slice(0,30);
+   groups.push(mints);sources.push({label:spec.label,n:mints.length});continue;
+  }
+ }
+ const why=r.status==='rejected'?String(r.reason?.message||r.reason):'Respuesta inválida';
+ failures.push(spec.label+': '+why);groups.push([]);sources.push({label:spec.label,n:0,error:true});
 }
 if(!groups.some(g=>g.length)&&!data.watch.length&&!data.open.length)throw Error('Ninguna fuente devolvió tokens Solana: '+failures.join(' | '));
 discoveryCache={groups,sources,failures};
-discoveryAt=now;
+discoveryAt=Date.now();discoveryLastError='';
 }
+function startDiscovery(){
+ if(discoveryPromise)return discoveryPromise;
+ discoveryPromise=refreshDiscovery().catch(err=>{
+  discoveryLastError=String(err?.message||err);
+  if(!discoveryCache)throw err;
+  discoveryAt=Date.now()-DISCOVERY_REFRESH_MS+15000;
+ }).finally(()=>{discoveryPromise=null});
+ return discoveryPromise;
+}
+async function market(){
+ const now=Date.now();
+ if(!discoveryCache)await startDiscovery();
+ else if(now-discoveryAt>DISCOVERY_REFRESH_MS&&!discoveryPromise)startDiscovery();
+ if(!discoveryCache)throw Error('Sin tokens conocidos del mercado.');
 const priority=[...new Set([...data.open.map(p=>p.mint),...data.watch])].filter(isMint);
 const universe=[],dedup=new Set(priority);
 // Alterna grupos de búsqueda, sin favorecer automáticamente un listado pagado.
@@ -503,7 +515,7 @@ if(opened===0&&qualifying.length>0&&running){let why=priceGap?'Falta la cotizaci
 persist();
 }catch(e){data.scanLog.unshift({t:Date.now(),error:String(e.message||e).slice(0,300)});data.scanLog=data.scanLog.filter(x=>x.t>=Date.now()-72*3600000).slice(0,1000);persist();decision('ERROR DE DATOS',String(e.message||e).slice(0,280));summary='Revisión fallida; los datos no están actualizados.';diagnostics='<p class="red">Consulta fallida: '+esc(e.message)+'. No se intentaron nuevas compras simuladas.</p>';$('lastError').textContent='Revisión cancelada; sin nuevas operaciones: '+e.message+'. No se inventaron precios ni tipo de cambio.'}
 finally{lastCycleMs=Date.now()-scanStarted;busy=false;render()}}
-$('start').onclick=()=>{running=true;saveRunning();decision('ACTIVADO','Reanudará análisis cada 15 s mientras la página esté visible.');render();tick()};
+$('start').onclick=()=>{running=true;saveRunning();decision('ACTIVADO','Intentará iniciar análisis cada 3 s mientras la página esté visible; la velocidad efectiva depende de los proveedores.');render();tick()};
 $('stop').onclick=()=>{running=false;saveRunning();decision('DETENIDO','No habrá nuevas entradas mientras esté detenido.');render()};
 $('once').onclick=async()=>{await tick()};
 $('add').onclick=()=>{const m=$('mint').value.trim();if(!isMint(m)){alert('Introduce un mint público válido de Solana');return}if(data.watch.includes(m)){alert('Ya está en observación');return}if(data.watch.length>=10){alert('Máximo 10 mints adicionales');return}data.watch.push(m);$('mint').value='';persist();render()};
