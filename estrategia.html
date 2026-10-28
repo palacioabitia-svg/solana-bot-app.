@@ -159,6 +159,14 @@ $('minuteEvaluations').textContent=String(evaluated);
 $('minuteRequests').textContent=String(minuteScans.reduce((total,x)=>total+(x.requests||0),0));
 $('coverage').textContent='Últimos 60 s: '+seenMintWindow.size+' tokens distintos realmente cotizados · '+evaluated+' evaluaciones de pares · '+requested+' solicitudes individuales de tokens (pueden repetirse). El conteo de distintos se reinicia al recargar la página.';
 const hr=hourReport();
+const hourEvaluations=hr.scans.filter(x=>!x.error).reduce((n,x)=>n+(x.quoted||0),0);
+$('hourEvaluations').textContent=hourEvaluations.toLocaleString('es-MX');
+$('cycleLatency').textContent=lastCycleMs? (lastCycleMs/1000).toFixed(1)+' s':'—';
+apiRequestLog=apiRequestLog.filter(t=>t>=Date.now()-60000);
+$('requestsAll').textContent=apiRequestLog.length.toLocaleString('es-MX');
+const backoffSeconds=Math.max(0,Math.ceil((backoffUntil-Date.now())/1000));
+$('apiHealth').textContent=backoffSeconds>0?'LÍMITE O SOBRECARGA: API pausada '+backoffSeconds+' s. '+(lastErrorStatus||''):
+ 'Frecuencia objetivo: una ronda cada 3 s, solo visible. Consultas API últimos 60 s: '+apiRequestLog.length+'. Revisiones omitidas mientras otra sigue activa: '+tickSkipped+(lastErrorStatus?'. Último incidente: '+lastErrorStatus:'')+'.';
 $('hourScans').textContent=String(hr.valid);
 $('hourTrades').textContent=hr.buy+' / '+hr.sell;
 $('hourNet').textContent=signedMoney(hr.pnl);
@@ -203,7 +211,24 @@ return '<tr><td><b>'+esc(p.symbol)+'</b><br><small>'+date(p.opened)+'</small><br
 $('history').innerHTML=data.events.length?'<div style="overflow-x:auto"><table><thead><tr><th>Fecha</th><th>Evento</th><th>Token</th><th>Capital</th><th>PnL neto</th></tr></thead><tbody>'+
 data.events.slice(0,80).map(e=>'<tr><td>'+date(e.t)+'</td><td>'+esc(e.type)+'</td><td>'+esc(e.symbol||'—')+'</td><td>$'+money(e.amount||0)+'</td><td>'+(e.pnl===undefined?'—':(e.pnl>=0?'+':'')+'$'+money(e.pnl))+'</td></tr>').join('')+'</tbody></table></div>':'Sin operaciones.';
 }
-async function json(url){const ctrl=new AbortController();const timeout=setTimeout(()=>ctrl.abort(),11000);try{const r=await fetch(url,{signal:ctrl.signal,headers:{Accept:'application/json'}});if(!r.ok)throw Error('HTTP '+r.status);return await r.json()}finally{clearTimeout(timeout)}}
+async function json(url){
+ const started=Date.now();
+ apiRequestLog.push(started);
+ apiRequestLog=apiRequestLog.filter(t=>t>=started-60000);
+ const ctrl=new AbortController();
+ const timeout=setTimeout(()=>ctrl.abort(),8000);
+ try{
+  const r=await fetch(url,{signal:ctrl.signal,headers:{Accept:'application/json'}});
+  if(!r.ok){
+   if(r.status===429||r.status===503){backoffUntil=Math.max(backoffUntil,Date.now()+BACKOFF_MS);lastErrorStatus='API '+r.status+' · pausa de '+Math.round(BACKOFF_MS/1000)+' s';}
+   throw Error('HTTP '+r.status+' en '+(url.includes('/tokens/v1/')?'precios':'descubrimiento'));
+  }
+  return await r.json();
+ }catch(e){
+  if(e.name==='AbortError'){lastErrorStatus='Tiempo de espera agotado tras '+Math.round((Date.now()-started)/1000)+' s';throw Error('Tiempo de espera agotado de datos del mercado')}
+  throw e;
+ }finally{clearTimeout(timeout)}
+}
 async function getFx(){
 const now=Date.now();
 if(fx&&now-fx.checked<60*60000)return fx;
@@ -359,7 +384,7 @@ const portion=Math.min(free,universe.length);
 for(let k=0;k<portion;k++){requested.push(universe[(scanCursor+k)%universe.length])}
 if(universe.length)scanCursor=(scanCursor+portion)%universe.length;
 if(!requested.length)throw Error('El radar no recibió direcciones públicas de Solana.');
-const batches=[];for(let i=0;i<requested.length;i+=30)batches.push(requested.slice(i,i+30));
+const batches=[];for(let i=0;i<requested.length&&batches.length<MAX_API_BATCHES_PER_SCAN;i+=30)batches.push(requested.slice(i,i+30));
 const attempts=await Promise.allSettled(batches.map(chunk=>json('https://api.dexscreener.com/tokens/v1/solana/'+chunk.join(','))));
 const all=[],lookupFailures=[];
 for(let i=0;i<attempts.length;i++){
@@ -367,6 +392,7 @@ for(let i=0;i<attempts.length;i++){
  if(x.status==='fulfilled'&&Array.isArray(x.value))all.push(...x.value);
  else lookupFailures.push('Lote '+(i+1)+': '+(x.status==='rejected'?x.reason?.message||String(x.reason):'Respuesta inválida'));
 }
+if(lookupFailures.some(e=>/HTTP 429|HTTP 503/.test(e)))throw Error('El proveedor limitó o rechazó lotes: '+lookupFailures.join(' | '));
 if(!all.length)throw Error('DexScreener no entregó ninguna cotización: '+lookupFailures.join(' | '));
 const byMint={};
 for(const mint of requested){
@@ -417,7 +443,10 @@ const today=localDay();
 if(data.day!==today){data.day=today;data.dayStart=equity();data.haltDay='';record({t:Date.now(),type:'NUEVA JORNADA',amount:data.dayStart})}
 }
 async function tick(){
-if(busy||document.hidden)return;const scanStarted=Date.now();busy=true;$('lastError').textContent='';render();
+ if(document.hidden)return;
+ if(busy){tickSkipped++;return}
+ if(Date.now()<backoffUntil){render();return}
+ const scanStarted=Date.now();busy=true;$('lastError').textContent='';render();
 try{
 const rate=(await getFx()).rate;refreshDay();
 const m=await market(),now=Date.now(),prices={};let n=0,opened=0,priceGap=false,riskExit=false;const qualifying=reportMarket(m);
@@ -468,7 +497,7 @@ summary='Última revisión: '+n+' tokens cotizados, '+qualifying.length+' señal
 if(opened===0&&qualifying.length>0&&running){let why=priceGap?'Falta la cotización de una posición existente':riskExit?'Salida por riesgo detectada en esta revisión':data.haltDay===data.day?'Límite de pérdida diaria activado':data.open.length>=MAX_POSITIONS?'Diez posiciones ocupadas':data.cash-RESERVE<MIN_STAKE?'Reserva y caja insuficiente':riskExposure()>=equity()*MAX_TOTAL_STOP_RISK-.75?'Presupuesto conjunto de riesgo agotado':'Pausa del token, tamaño mínimo o cupos de entrada';diagnostics+='<p class="amber"><b>Sin nueva compra:</b> '+esc(why)+'. Una señal favorable no obliga a entrar.</p>';}
 persist();
 }catch(e){data.scanLog.unshift({t:Date.now(),error:String(e.message||e).slice(0,300)});data.scanLog=data.scanLog.filter(x=>x.t>=Date.now()-72*3600000).slice(0,1000);persist();decision('ERROR DE DATOS',String(e.message||e).slice(0,280));summary='Revisión fallida; los datos no están actualizados.';diagnostics='<p class="red">Consulta fallida: '+esc(e.message)+'. No se intentaron nuevas compras simuladas.</p>';$('lastError').textContent='Revisión cancelada; sin nuevas operaciones: '+e.message+'. No se inventaron precios ni tipo de cambio.'}
-finally{busy=false;render()}}
+finally{lastCycleMs=Date.now()-scanStarted;busy=false;render()}}
 $('start').onclick=()=>{running=true;saveRunning();decision('ACTIVADO','Reanudará análisis cada 15 s mientras la página esté visible.');render();tick()};
 $('stop').onclick=()=>{running=false;saveRunning();decision('DETENIDO','No habrá nuevas entradas mientras esté detenido.');render()};
 $('once').onclick=async()=>{await tick()};
