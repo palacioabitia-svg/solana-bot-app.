@@ -160,7 +160,7 @@ $('uniqueMinute').textContent=String(seenMintWindow.size);
 $('minuteEvaluations').textContent=String(evaluated);
 $('minuteChanges').textContent=String(minuteScans.reduce((n,x)=>n+(x.changed||0),0));
 $('minuteRequests').textContent=String(minuteScans.reduce((total,x)=>total+(x.requests||0),0));
-$('coverage').textContent='Últimos 60 s: '+seenMintWindow.size+' tokens distintos realmente cotizados · '+evaluated+' evaluaciones de pares · '+requested+' solicitudes individuales de tokens (pueden repetirse). El conteo de distintos se reinicia al recargar la página.';
+$('coverage').textContent='Últimos 60 s: '+seenMintWindow.size+' tokens distintos realmente cotizados · '+evaluated+' evaluaciones de pares · '+requested+' solicitudes individuales de tokens (pueden repetirse). '+(discoveryPromise?'Fuentes refrescándose en paralelo; las cotizaciones siguen. ':discoveryLastError?'Último fallo de descubrimiento: '+discoveryLastError.slice(0,130)+'. ':'')+'El conteo de distintos se reinicia al recargar la página.';
 const hr=hourReport();
 const hourEvaluations=hr.scans.filter(x=>!x.error).reduce((n,x)=>n+(x.quoted||0),0);
 $('hourEvaluations').textContent=hourEvaluations.toLocaleString('es-MX');
