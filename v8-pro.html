@@ -161,7 +161,18 @@ return '<tr><td><b>'+esc(p.symbol)+'</b><br><small>'+date(p.opened)+'</small><br
 $('history').innerHTML=data.events.length?'<div style="overflow-x:auto"><table><thead><tr><th>Fecha</th><th>Evento</th><th>Token</th><th>Capital</th><th>PnL neto</th></tr></thead><tbody>'+
 data.events.slice(0,80).map(e=>'<tr><td>'+date(e.t)+'</td><td>'+esc(e.type)+'</td><td>'+esc(e.symbol||'—')+'</td><td>$'+money(e.amount||0)+'</td><td>'+(e.pnl===undefined?'—':(e.pnl>=0?'+':'')+'$'+money(e.pnl))+'</td></tr>').join('')+'</tbody></table></div>':'Sin operaciones.';
 }
-async function json(url){const ctrl=new AbortController();const timeout=setTimeout(()=>ctrl.abort(),11000);try{const r=await fetch(url,{signal:ctrl.signal,headers:{Accept:'application/json'}});if(!r.ok)throw Error('HTTP '+r.status);return await r.json()}finally{clearTimeout(timeout)}}
+async function json(url){
+ const ctrl=new AbortController(),timeout=setTimeout(()=>ctrl.abort(),8000);
+ try{
+  const r=await fetch(url,{signal:ctrl.signal,headers:{Accept:'application/json'}});
+  if(!r.ok){
+   if((r.status===429||r.status===503)&&url.includes('dexscreener.com'))backoffUntil=Math.max(backoffUntil,Date.now()+30000);
+   throw Error('HTTP '+r.status+(url.includes('dexscreener.com')?' · DexScreener':''));
+  }
+  return await r.json();
+ }catch(e){if(e.name==='AbortError')throw Error('Tiempo de espera de datos excedido (8 s)');throw e}
+ finally{clearTimeout(timeout)}
+}
 async function getFx(){
 const now=Date.now();
 if(fx&&now-fx.checked<60*60000)return fx;
@@ -269,9 +280,7 @@ diagnostics='<p><b>Escaneados:</b> '+m.mints.length+' tokens · '+Object.keys(m.
 return qualifying
 }
 
-async function market(){
-const now=Date.now();
-if(!discoveryCache||now-discoveryAt>90000){
+async function refreshDiscovery(){
 const feedSpecs=[
 {label:'Perfiles recientes',url:'https://api.dexscreener.com/token-profiles/latest/v1',kind:'tokens'},
 {label:'Boosts destacados (publicidad pagada)',url:'https://api.dexscreener.com/token-boosts/top/v1',kind:'tokens'},
@@ -288,25 +297,40 @@ const feedSpecs=[
 {label:'Búsqueda RAY',url:'https://api.dexscreener.com/latest/dex/search?q=RAY',kind:'pairs'},
 {label:'Búsqueda PENGU',url:'https://api.dexscreener.com/latest/dex/search?q=PENGU',kind:'pairs'}
 ];
+
 const responses=await Promise.allSettled(feedSpecs.map(f=>json(f.url)));
 const sources=[],groups=[],failures=[];
 for(let i=0;i<responses.length;i++){
-const r=responses[i],spec=feedSpecs[i];
-if(r.status==='fulfilled'){
-const found=spec.kind==='pairs'?r.value?.pairs:r.value;
-if(Array.isArray(found)){
-const mints=[...new Set(found.filter(p=>p.chainId==='solana')
-.map(p=>spec.kind==='pairs'?p.baseToken?.address:p.tokenAddress).filter(isMint))].slice(0,30);
-groups.push(mints);sources.push({label:spec.label,n:mints.length});continue;
+ const r=responses[i],spec=feedSpecs[i];
+ if(r.status==='fulfilled'){
+  const found=spec.kind==='pairs'?r.value?.pairs:r.value;
+  if(Array.isArray(found)){
+   const mints=[...new Set(found.filter(p=>p.chainId==='solana')
+     .map(p=>spec.kind==='pairs'?p.baseToken?.address:p.tokenAddress).filter(isMint))].slice(0,30);
+   groups.push(mints);sources.push({label:spec.label,n:mints.length});continue;
+  }
+ }
+ const why=r.status==='rejected'?String(r.reason?.message||r.reason):'Respuesta inválida';
+ failures.push(spec.label+': '+why);groups.push([]);sources.push({label:spec.label,n:0,error:true});
 }
-}
-const why=r.status==='rejected'?String(r.reason?.message||r.reason):'Respuesta inválida';
-failures.push(spec.label+': '+why);groups.push([]);sources.push({label:spec.label,n:0,error:true});
-}
-if(!groups.some(g=>g.length)&&!data.watch.length&&!data.open.length)throw Error('Ninguna fuente devolvió tokens Solana: '+failures.join(' | '));
+if(!groups.some(g=>g.length)&&!data.watch.length&&!data.open.length)throw Error('No hay tokens Solana en fuentes disponibles: '+failures.join(' | '));
 discoveryCache={groups,sources,failures};
-discoveryAt=now;
+discoveryAt=Date.now();discoveryError='';
 }
+function launchDiscovery(){
+ if(discoveryPromise)return discoveryPromise;
+ discoveryPromise=refreshDiscovery().catch(error=>{
+  discoveryError=String(error?.message||error);
+  if(!discoveryCache)throw error;
+  discoveryAt=Math.min(discoveryAt,Date.now()-DISCOVERY_INTERVAL+20000);
+ }).finally(()=>{discoveryPromise=null});
+ return discoveryPromise;
+}
+async function market(){
+ const now=Date.now();
+ if(!discoveryCache)await launchDiscovery();
+ else if(now-discoveryAt>DISCOVERY_INTERVAL&&!discoveryPromise)launchDiscovery();
+ if(!discoveryCache)throw Error('Descubrimiento no disponible.');
 const priority=[...new Set([...data.open.map(p=>p.mint),...data.watch])].filter(isMint);
 const universe=[],seen=new Set(priority);
 for(let j=0;j<30;j++)for(const group of discoveryCache.groups){const mint=group[j];if(mint&&!seen.has(mint)&&universe.length<MAX_UNIVERSE){universe.push(mint);seen.add(mint)}}
@@ -323,7 +347,7 @@ if(!all.length)throw Error('No se pudieron obtener cotizaciones: '+fail.join(' |
 const byMint={};
 for(const mint of unique){const held=data.open.find(o=>o.mint===mint);const exact=held?all.find(p=>p.chainId==='solana'&&p.baseToken?.address===mint&&p.pairAddress===held.pair&&num(p.priceUsd)>0):null;const p=held?exact:pairsFor(mint,all);if(p)byMint[mint]=p}
 $('sources-status').textContent='DexScreener: '+Object.keys(byMint).length+' cotizados / '+unique.length+' solicitados; universo '+universe.length+'; '+discoveryCache.sources.length+' fuentes.';
-return {mints:unique,byMint,sources:discoveryCache.sources,failures:[...discoveryCache.failures,...fail]}
+return {mints:unique,byMint,stale:Date.now()-discoveryAt>10*60000,sources:discoveryCache.sources,failures:[...discoveryCache.failures,...fail]}
 
 }
 function openTrade(mint,p,rate){
@@ -364,7 +388,9 @@ const today=localDay();
 if(data.day!==today){data.day=today;data.dayStart=equity();data.haltDay='';record({t:Date.now(),type:'NUEVA JORNADA',amount:data.dayStart})}
 }
 async function tick(){
-if(busy||document.hidden)return;busy=true;$('lastError').textContent='';render();
+if(busy||document.hidden)return;
+if(Date.now()<backoffUntil){$('lastError').textContent='API limitada: pausa de '+Math.ceil((backoffUntil-Date.now())/1000)+' segundos antes de consultar otra vez.';render();return}
+busy=true;$('lastError').textContent='';render();
 try{
 const rate=(await getFx()).rate;refreshDay();
 const m=await market(),now=Date.now(),prices={};let n=0,opened=0,priceGap=false,riskExit=false;const qualifying=reportMarket(m);
@@ -393,14 +419,14 @@ else if(hours>=MAX_HOLD_HOURS)closeTrade(pos,price,rate,'TIEMPO MÁXIMO 30 MIN')
 }
 maybeVirtualPayout();
 if(equity()<=data.dayStart*(1-DAILY)){data.haltDay=data.day;$('lastError').textContent='Caída diaria estimada ≥ 10%: nuevas entradas bloqueadas; salidas simuladas siguen vigilándose mientras la página permanezca visible.'}
-if(running&&data.haltDay!==data.day&&!priceGap&&!riskExit){
+if(running&&data.haltDay!==data.day&&!priceGap&&!riskExit&&!m.stale){
 for(const item of qualifying){
 if(data.open.length>=MAX_POSITIONS||opened>=MAX_NEW_PER_SCAN)break;
 if(openTrade(item.mint,item.p,rate))opened++;
 }
 }
 data.lastCheck=now;lastReview=now;recentScans.push(now);
-const riskMsg=priceGap?'No hay cotización del par de una posición':riskExit?'Se cerró posición por riesgo':data.haltDay===data.day?'Pérdida diaria máxima alcanzada':data.open.length>=MAX_POSITIONS?'Máximo de posiciones en uso':data.cash-RESERVE<MIN_STAKE?'Capital disponible insuficiente':riskExposure()>equity()*MAX_TOTAL_STOP_RISK-.75?'Presupuesto de riesgo agotado':'Sin señal de precio/flujo o en espera de enfriamiento';
+const riskMsg=m.stale?'Fuentes de descubrimiento desactualizadas':priceGap?'No hay cotización del par de una posición':riskExit?'Se cerró posición por riesgo':data.haltDay===data.day?'Pérdida diaria máxima alcanzada':data.open.length>=MAX_POSITIONS?'Máximo de posiciones en uso':data.cash-RESERVE<MIN_STAKE?'Capital disponible insuficiente':riskExposure()>equity()*MAX_TOTAL_STOP_RISK-.75?'Presupuesto de riesgo agotado':'Sin señal de precio/flujo o en espera de enfriamiento';
 decision(opened>0?'ENTRADA SIMULADA':riskExit?'SALIDA POR RIESGO':qualifying.length?'SEÑAL SIN ENTRADA':'SIN SEÑAL',opened>0?opened+' posiciones virtuales abiertas tras revisar '+n+' pares.':riskMsg+'; '+n+' pares consultados, '+qualifying.length+' señales nuevas.');
 summary='Última revisión: '+n+' tokens cotizados, '+qualifying.length+' señales confirmadas de mercado, '+opened+' nuevas posiciones virtuales. '+(priceGap?'Entradas bloqueadas por falta de cotización. ':riskExit?'Entradas pausadas en esta revisión tras salida por riesgo. ':'')+date(now)+'. Las señales no equivalen a verificación de seguridad.';
 if(opened===0&&qualifying.length>0&&running){let why=priceGap?'Falta la cotización de una posición existente':riskExit?'Salida por riesgo detectada en esta revisión':data.haltDay===data.day?'Límite de pérdida diaria activado':data.open.length>=MAX_POSITIONS?'Diez posiciones ocupadas':data.cash-RESERVE<MIN_STAKE?'Reserva y caja insuficiente':riskExposure()>=equity()*MAX_TOTAL_STOP_RISK-.75?'Presupuesto conjunto de riesgo agotado':'Pausa del token, tamaño mínimo o cupos de entrada';diagnostics+='<p class="amber"><b>Sin nueva compra:</b> '+esc(why)+'. Una señal favorable no obliga a entrar.</p>';}
