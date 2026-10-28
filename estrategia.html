@@ -92,6 +92,7 @@ const START=500,RESERVE=0,MAX_POSITIONS=10,MAX_STAKE=.20,MAX_TOTAL_STOP_RISK=.12
 const TRAIL=.04;
 const POLL_MS=3000,COOLDOWN_MS=30000,MAX_HOLD_HOURS=.5,MIN_STAKE=5,MAX_NEW_PER_SCAN=6;
 const BACKOFF_MS=30000,MAX_API_BATCHES_PER_SCAN=6;
+// Límites publicados por DexScreener: consultas de pares 300 solicitudes/min; no son cotizaciones ejecutables.
 const MAX_UNIVERSE=420,SCAN_SIZE=180,DISCOVERY_REFRESH_MS=90000;
 const ROUND_COST=.022,GAS=.05,MAX_AGE_MS=7*86400000;
 let running=false,busy=false,fx=null,lastPrices={},lastReview=0,summary='Sin evaluación de mercado.',diagnostics='Todavía no se ha realizado una consulta.',recentScans=[],confirmations=new Map(),observedPrices=new Map(),discoveryCache=null,discoveryAt=0,scanCursor=0,seenMintWindow=new Map(),topCandidates=[],decisionHistory=[],lastDecision='Aún no hay decisiones',backoffUntil=0,lastCycleMs=0,lastErrorStatus='',apiRequestLog=[],tickSkipped=0;
@@ -196,7 +197,7 @@ $('minuteStatus').textContent=minutePnl>=MINUTE_GOAL?'Meta simulada superada (ú
 
 $('pace').innerHTML='<b>Últimos 60 s:</b> '+recentScans.length+' revisiones, '+minuteEvents.length+' operaciones virtuales (entradas y salidas). Son eventos simulados, no transacciones on-chain.';
 $('diagnostics').innerHTML=diagnostics;
-$('candidates').innerHTML=topCandidates.length?'<p><b>Tokens observados (reales, NO recomendados):</b></p><table><thead><tr><th>Token</th><th>Liquidez USD</th><th>Precio 5m</th><th>Compras / ventas 5m</th><th>Motivo</th></tr></thead><tbody>'+topCandidates.map(x=>'<tr><td>'+esc(x.symbol)+'</td><td>'+money(x.liq)+'</td><td>'+esc(x.m5===null?'ND':x.m5.toFixed(2)+'%')+'</td><td>'+esc(x.buys===null?'ND':x.buys)+' / '+esc(x.sells===null?'ND':x.sells)+'</td><td>'+esc(x.reason)+'</td></tr>').join('')+'</tbody></table>':'';
+$('candidates').innerHTML=topCandidates.length?'<p><b>Tokens reales consultados a DexScreener:</b> información recibida a '+date(topCandidates[0].received)+'. La hora de recepción NO significa que el precio se haya actualizado.</p><table><thead><tr><th>Token y mercado</th><th>Precio USD</th><th>Liquidez USD</th><th>Cambio 5m</th><th>Compras / ventas 5m</th><th>Evaluación</th></tr></thead><tbody>'+topCandidates.map(x=>'<tr><td><b>'+esc(x.symbol)+'</b><div class="note">'+esc(x.mint.slice(0,8))+'…</div>'+(x.pool&&/^[1-9A-HJ-NP-Za-km-z]{32,60}$/.test(x.pool)?'<a href="https://dexscreener.com/solana/'+encodeURIComponent(x.pool)+'" target="_blank" rel="noopener noreferrer">Comprobar par</a>':'')+'</td><td>'+esc(x.priceUsd===null?'ND':String(x.priceUsd))+'</td><td>$'+money(x.liq)+'</td><td>'+esc(x.m5===null?'ND':x.m5.toFixed(2)+'%')+'</td><td>'+esc(x.buys===null?'ND':x.buys)+' / '+esc(x.sells===null?'ND':x.sells)+'</td><td>'+esc(x.reason)+'</td></tr>').join('')+'</tbody></table>':'';
 const eq=equity();$('equity').textContent='$'+money(eq);$('cash').textContent='$'+money(data.cash);
 $('pnl').textContent=signedMoney(realizedAndUnrealized());
 $('positions').textContent=data.open.length+' / '+MAX_POSITIONS;$('payouts').textContent='$'+money(data.paid);
@@ -316,7 +317,7 @@ qualifying.push({mint,p,score:result.score,signal:risingPrice?'price':'flow'});
 if(risingPrice)priceUpdates++;else flowUpdates++;
 }
 }
-leaderboard.push({symbol:name,liq:num(p.liquidity?.usd)||0,m5:num(p.priceChange?.m5),buys,sells,reason,score:result.score});
+leaderboard.push({symbol:name,mint,liquidity:num(p.liquidity?.usd)||0,liq:num(p.liquidity?.usd)||0,priceUsd:price,pool:String(p.pairAddress||''),m5:num(p.priceChange?.m5),buys,sells,reason,score:result.score,received:now});
 }
 for(const [mint,state] of confirmations){if(now-state.last>180000)confirmations.delete(mint)}
 for(const [mint,state] of observedPrices){if(now-state.at>180000)observedPrices.delete(mint)}
@@ -492,7 +493,7 @@ const riskMsg=priceGap?'No hay cotización del par de una posición':riskExit?'S
 decision(opened>0?'ENTRADA SIMULADA':riskExit?'SALIDA POR RIESGO':qualifying.length?'SEÑAL SIN ENTRADA':'SIN SEÑAL',opened>0?opened+' posiciones virtuales abiertas tras revisar '+n+' pares.':riskMsg+'; '+n+' pares consultados, '+qualifying.length+' señales nuevas.');
  const statusText=opened>0?'Compró '+opened:riskMsg;
  data.scanLog.unshift({t:now,quoted:n,requested:m.requested,requests:m.batchCount,universe:m.poolSize,signals:qualifying.length,opened,closed:closedNow,blocked:statusText});
- data.scanLog=data.scanLog.filter(x=>x.t>=Date.now()-72*3600000).slice(0,1000);
+ data.scanLog=data.scanLog.filter(x=>x.t>=Date.now()-4*3600000).slice(0,3600);
 summary='Última revisión: '+n+' tokens cotizados, '+qualifying.length+' señales confirmadas de mercado, '+opened+' nuevas posiciones virtuales. '+(priceGap?'Entradas bloqueadas por falta de cotización. ':riskExit?'Entradas pausadas en esta revisión tras salida por riesgo. ':'')+date(now)+'. Las señales no equivalen a verificación de seguridad.';
 if(opened===0&&qualifying.length>0&&running){let why=priceGap?'Falta la cotización de una posición existente':riskExit?'Salida por riesgo detectada en esta revisión':data.haltDay===data.day?'Límite de pérdida diaria activado':data.open.length>=MAX_POSITIONS?'Diez posiciones ocupadas':data.cash-RESERVE<MIN_STAKE?'Reserva y caja insuficiente':riskExposure()>=equity()*MAX_TOTAL_STOP_RISK-.75?'Presupuesto conjunto de riesgo agotado':'Pausa del token, tamaño mínimo o cupos de entrada';diagnostics+='<p class="amber"><b>Sin nueva compra:</b> '+esc(why)+'. Una señal favorable no obliga a entrar.</p>';}
 persist();
