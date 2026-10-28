@@ -455,7 +455,7 @@ busy=true;$('lastError').textContent='';render();
 try{
 const rate=(await getFx()).rate;refreshDay();
 const m=await market(),now=Date.now(),prices={};let n=0,opened=0,priceGap=false,riskExit=false;
-const breadthPrices=Object.values(m.byMint).map(x=>num(x.priceChange?.m5)).filter(x=>x!==null);
+const breadthPrices=Object.values(m.byMint).filter(x=>num(x.liquidity?.usd)>=MIN_LIQ_USD&&num(x.volume?.h24)>=MIN_VOL_24).map(x=>num(x.priceChange?.m5)).filter(x=>x!==null);
 marketBreadth=breadthPrices.length>=30?breadthPrices.filter(x=>x>=0).length/breadthPrices.length:0;
 const qualifying=reportMarket(m);
 for(const mint of Object.keys(m.byMint))minuteDistinct.set(mint,now);minuteQuotes.push({at:now,count:Object.keys(m.byMint).length});
@@ -465,10 +465,10 @@ for(const pos of [...data.open]){
 const p=m.byMint[pos.mint],quote=prices[pos.mint];
 if(!p||!quote||quote.pair!==pos.pair){priceGap=true;$('lastError').textContent='Algunas posiciones no tienen cotización del mismo par: se mantienen sin valorar ni cerrar.';continue}
 const price=quote.price;pos.peak=Math.max(pos.peak,price);
-const netPnl=exitValue(pos.qty,price,rate,pos.currentLiquidity)-pos.cost;
+const liq=num(p.liquidity?.usd),oldLiq=num(pos.entryLiquidity);pos.currentLiquidity=liq;
+const netPnl=exitValue(pos.qty,price,rate,liq)-pos.cost;
 const hours=(now-pos.opened)/3600000;
 const buys=num(p.txns?.m5?.buys),sells=num(p.txns?.m5?.sells),fiveMin=num(p.priceChange?.m5);
-const liq=num(p.liquidity?.usd),oldLiq=num(pos.entryLiquidity);pos.currentLiquidity=liq;
 const peakPnl=exitValue(pos.qty,pos.peak,rate,liq)-pos.cost;
 const target=pos.targetNet||Math.max(2,(pos.stopLoss||pos.cost*.1)*REWARD_RISK);
 const liquidityWarning=liq!==null&&((oldLiq!==null&&oldLiq>0&&liq<oldLiq*.6)||liq<12000);
