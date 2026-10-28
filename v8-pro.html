@@ -17,7 +17,7 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 </style></head><body>
 <p><a href="./index.html">← Wallet</a> · <a href="./radar.html">Radar</a> · <a href="./auditoria.html">Auditoría</a></p>
 <h1>Motor de decisiones · V8 Pro</h1><p class="green"><b>BASE ORIGINAL V8 · SIMULACIÓN REFORZADA</b> · 27 de octubre de 2026</p>
-<p class="amber"><b>META ASPIRACIONAL: +$10 MXN NETOS POR MINUTO, partiendo de $500 MXN.</b> Es un objetivo extraordinariamente arriesgado (2% del capital inicial cada minuto), no un ingreso previsto ni garantizado. El sistema no inventará ganancias ni abrirá posiciones sin una señal.</p>
+<p class="amber"><b>META EXTRAORDINARIA Y NO DEMOSTRADA: +$10 MXN NETOS POR MINUTO CON $500 VIRTUALES.</b> Esa rentabilidad sostenida no es realista como promesa. El motor medirá operaciones cerradas antes de aumentar el riesgo. El sistema no inventará ganancias ni abrirá posiciones sin una señal.</p>
 <p class="amber"><b>OBJETIVO DE INVESTIGACIÓN: $500 → $1,000 → $2,000 Y MÁS, SOLO SI LOS RESULTADOS LO JUSTIFICAN.</b> La multiplicación del capital no está garantizada y la simulación puede perderlo.</p>
 <p class="amber"><b>MODO DEMOSTRACIÓN. No usa SOL, no opera en tu wallet y no realiza retiros.</b> Solo utiliza precios públicos de mercado. Las salidas son hipotéticas: un token real podría impedir vender o ejecutarse mucho peor.</p>
 <div class="card"><h2>Control de simulación</h2>
@@ -46,10 +46,10 @@ table{border-collapse:collapse;width:100%;font-size:13px}th,td{text-align:left;p
 <div class="card"><h2>Evaluación de calidad: ¿está funcionando?</h2><p id="qualitySummary" class="note">No hay suficientes operaciones cerradas para evaluar la estrategia.</p><p id="dataHealth" class="note">Estado de fuentes: esperando primer escaneo.</p><p class="note">El modelo incorpora comisiones y una estimación conservadora de impacto de precio; NO comprueba que un token pueda venderse realmente. No audita contratos, autoridades de mint, congelación ni concentración de holders.</p></div>
 <div class="card">
 <h2>Reglas de la reconstrucción V8</h2>
-<p><b>Capital inicial: $500 MXN virtuales.</b> Hasta <b>20% del patrimonio por compra simulada</b>, sin reserva fija; las entradas no son obligatorias ni garantizan ganancias.</p>
+<p><b>Capital inicial: $500 MXN virtuales.</b> Hasta <b>20% del patrimonio por compra simulada</b>, sin reserva fija, pero con máximo <b>60% del patrimonio comprometido</b> y hasta tres posiciones por exchange. Las entradas no son obligatorias ni garantizan ganancias.</p>
 <p><b>Radar:</b> consulta precios públicos reales desde DexScreener para hasta 180 tokens por revisión, rotando un universo de hasta 420 direcciones recogidas de 14 fuentes. <b>Filtros adicionales:</b> Raydium, PumpSwap y Meteora (también Orca); liquidez desde USD 50,000, volumen 24h desde USD 100,000, antigüedad mínima de 1 hora, actividad compradora y puntuación de al menos 62/100. Intenta iniciar una revisión cada 5 segundos con la página visible; el proveedor puede retrasar o bloquear peticiones. El contador muestra evaluaciones repetidas y tokens distintos por separado.</p>
 <p><b>Salidas:</b> busca $1–$2 MXN netos simulados después de los costos estimados, stop de referencia del 6% en el precio y permanencia máxima de 30 minutos. No es posible garantizar ejecución de venta ni ganancia real.</p>
-<p><b>Protecciones:</b> exposición conjunta estimada al stop de hasta 12% del patrimonio y pausa de nuevas entradas si el patrimonio cae 10% frente al comienzo del día. Un desplome súbito puede superar el límite.</p>
+<p><b>Protecciones:</b> exposición conjunta estimada al stop de hasta 12% del patrimonio, máximo 60% de capital invertido y pausa de nuevas entradas si el patrimonio cae 10% frente al comienzo del día. Un desplome súbito puede superar el límite.</p>
 <p><b>Nota:</b> mantiene únicamente el diseño y flujo de la V8 funcional; utiliza almacenamiento local nuevo para no modificar los saldos e historiales anteriores. Este motor no ejecuta compras con SOL real ni continúa con Phantom cerrado.</p>
 </div>
 <div class="card"><h2>Direcciones adicionales para observar</h2><p class="muted">El motor investiga hasta 420 direcciones de Solana por renovación, con revisión rotativa de hasta 180 tokens por ronda y reparto equilibrado entre 14 consultas a DexScreener; los pares maduros ya no se descartan solo por superar 30 días. Algunas fuentes son promocionadas o resultados de búsqueda; no equivalen a una lista de las mejores monedas ni a una auditoría. Si quieres seguir un token específico, añade su mint público.</p>
@@ -70,7 +70,7 @@ const RUN_KEY='solana-v8-pro-run';
 const START=500,RESERVE=0,MAX_POSITIONS=10,MAX_STAKE=.20,MAX_TOTAL_STOP_RISK=.12,STOP=.06,TRAIL=.04,DAILY=.10,MINUTE_GOAL=10,NET_PROFIT_MIN=1,NET_PROFIT_GOAL=2;
 const POLL_MS=5000,COOLDOWN_MS=30000,MAX_HOLD_HOURS=.5,MIN_STAKE=5,MAX_NEW_PER_SCAN=6;
 const SCAN_SIZE=180,MAX_UNIVERSE=420,DISCOVERY_INTERVAL=120000,MIN_LIQ_USD=50000,MIN_VOL_24=100000,MIN_SCORE=62,MIN_POOL_AGE_MIN=60;
-const DEX_ALLOW=/raydium|pump|meteora|orca/i,BASE_IMPACT=.004,MAX_IMPACT=.03;
+const DEX_ALLOW=/raydium|pump|meteora|orca/i,BASE_IMPACT=.004,MAX_IMPACT=.03,MAX_CAPITAL_EXPOSURE=.60,MAX_ONE_DEX=3;
 const ROUND_COST=.022,GAS=.05,MAX_AGE_MS=7*86400000;
 let running=false,busy=false,fx=null,lastPrices={},lastReview=0,summary='Sin evaluación de mercado.',diagnostics='Todavía no se ha realizado una consulta.',recentScans=[],confirmations=new Map(),observedPrices=new Map(),discoveryCache=null,discoveryAt=0,discoveryPromise=null,discoveryError='',backoffUntil=0,scanCursor=0,minuteQuotes=[],minuteDistinct=new Map(),apiErrorCount=0,lastCycleMs=0,topCandidates=[],decisionHistory=[],lastDecision='Aún no hay decisiones';
 const money=n=>Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -353,17 +353,20 @@ return {mints:unique,byMint,stale:Date.now()-discoveryAt>10*60000,sources:discov
 function openTrade(mint,p,rate){
 if(data.open.some(t=>t.mint===mint)||data.open.length>=MAX_POSITIONS||(data.cooldowns[mint]&&Date.now()-data.cooldowns[mint]<COOLDOWN_MS))return false;
 const usable=data.cash-RESERVE,eq=equity();
+const dex=String(p.dexId||'').toLowerCase(),sameDex=data.open.filter(x=>x.dexId===dex).length;
+if(sameDex>=MAX_ONE_DEX)return false;
+const committed=data.open.reduce((n,x)=>n+x.cost,0),availableExposure=Math.max(0,eq*MAX_CAPITAL_EXPOSURE-committed);
 const remainingRisk=eq*MAX_TOTAL_STOP_RISK-riskExposure();
 const stopFactor=(1-STOP)*(1-ROUND_COST-MAX_IMPACT)/(1+ROUND_COST+MAX_IMPACT);
 const maxStakeRisk=(remainingRisk-GAS*(1+stopFactor))/(1-stopFactor);
-const stake=Math.min(usable,eq*MAX_STAKE,maxStakeRisk);
+const stake=Math.min(usable,eq*MAX_STAKE,maxStakeRisk,availableExposure);
 const price=num(p.priceUsd);
 if(!price||!Number.isFinite(stake)||stake<MIN_STAKE||!p.pairAddress||!Number.isFinite(rate)||rate<=0)return false;
 const impact=priceImpact(stake,num(p.liquidity?.usd),rate);
 const qty=(stake-GAS)/(price*rate*(1+ROUND_COST+impact));
 if(!Number.isFinite(qty)||qty<=0||data.cash-stake<RESERVE-.000001)return false;
 data.cash-=stake;
-data.open.push({mint,pair:p.pairAddress,symbol:String(p.baseToken?.symbol||'?').slice(0,30),opened:Date.now(),cost:stake,qty,entryPrice:price,entryFx:rate,entryLiquidity:num(p.liquidity?.usd),currentLiquidity:num(p.liquidity?.usd),entryImpact:impact,score:inspectSignal(p).score,peak:price});
+data.open.push({mint,pair:p.pairAddress,symbol:String(p.baseToken?.symbol||'?').slice(0,30),opened:Date.now(),cost:stake,qty,dexId:dex,entryPrice:price,entryFx:rate,entryLiquidity:num(p.liquidity?.usd),currentLiquidity:num(p.liquidity?.usd),entryImpact:impact,score:inspectSignal(p).score,peak:price});
 confirmations.delete(mint);
 record({t:Date.now(),type:'COMPRA SIMULADA',symbol:p.baseToken?.symbol,amount:stake,score:inspectSignal(p).score,impactPct:impact*100,priceUsd:price});
 return true
