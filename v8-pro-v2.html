@@ -453,7 +453,10 @@ if(Date.now()<backoffUntil){$('lastError').textContent='API limitada: pausa de '
 busy=true;$('lastError').textContent='';render();
 try{
 const rate=(await getFx()).rate;refreshDay();
-const m=await market(),now=Date.now(),prices={};let n=0,opened=0,priceGap=false,riskExit=false;const qualifying=reportMarket(m);
+const m=await market(),now=Date.now(),prices={};let n=0,opened=0,priceGap=false,riskExit=false;
+const breadthPrices=Object.values(m.byMint).map(x=>num(x.priceChange?.m5)).filter(x=>x!==null);
+marketBreadth=breadthPrices.length>=30?breadthPrices.filter(x=>x>=0).length/breadthPrices.length:0;
+const qualifying=reportMarket(m);
 for(const mint of Object.keys(m.byMint))minuteDistinct.set(mint,now);minuteQuotes.push({at:now,count:Object.keys(m.byMint).length});
 for(const [mint,p] of Object.entries(m.byMint)){const price=num(p.priceUsd);if(price>0){prices[mint]={price,pair:p.pairAddress,at:now,liq:num(p.liquidity?.usd)};n++}}
 lastPrices=prices;
@@ -461,35 +464,46 @@ for(const pos of [...data.open]){
 const p=m.byMint[pos.mint],quote=prices[pos.mint];
 if(!p||!quote||quote.pair!==pos.pair){priceGap=true;$('lastError').textContent='Algunas posiciones no tienen cotización del mismo par: se mantienen sin valorar ni cerrar.';continue}
 const price=quote.price;pos.peak=Math.max(pos.peak,price);
-const factor=price/pos.entryPrice,net=(exitValue(pos.qty,price,rate,pos.currentLiquidity)-pos.cost)/pos.cost;
-const peakNet=(exitValue(pos.qty,pos.peak,rate,pos.currentLiquidity)-pos.cost)/pos.cost;
+const netPnl=exitValue(pos.qty,price,rate,pos.currentLiquidity)-pos.cost;
 const hours=(now-pos.opened)/3600000;
 const buys=num(p.txns?.m5?.buys),sells=num(p.txns?.m5?.sells),fiveMin=num(p.priceChange?.m5);
 const liq=num(p.liquidity?.usd),oldLiq=num(pos.entryLiquidity);pos.currentLiquidity=liq;
+const peakPnl=exitValue(pos.qty,pos.peak,rate,liq)-pos.cost;
+const target=pos.targetNet||Math.max(2,(pos.stopLoss||pos.cost*.1)*REWARD_RISK);
 const liquidityWarning=liq!==null&&((oldLiq!==null&&oldLiq>0&&liq<oldLiq*.6)||liq<12000);
 const sellPressure=buys!==null&&sells!==null&&sells>=5&&((sells>Math.max(1,buys)*1.9&&fiveMin!==null&&fiveMin< -1)||(sells>Math.max(1,buys)*1.35&&fiveMin!==null&&fiveMin< -5));
 const marketReversal=fiveMin!==null&&fiveMin<=-9;
-if(factor<=1-STOP){closeTrade(pos,price,rate,'STOP · PÉRDIDA REFERENCIAL');riskExit=true;}
+const weakening=(fiveMin!==null&&fiveMin<1)||(buys!==null&&sells!==null&&sells>buys*1.12);
+if(price<=pos.entryPrice*(1-STOP)){closeTrade(pos,price,rate,'STOP · PÉRDIDA REFERENCIAL');riskExit=true;}
 else if(liquidityWarning){closeTrade(pos,price,rate,'RIESGO · CAÍDA DE LIQUIDEZ');riskExit=true;}
 else if(sellPressure||marketReversal){closeTrade(pos,price,rate,'RIESGO · PRESIÓN VENDEDORA');riskExit=true;}
-else if(exitValue(pos.qty,price,rate,pos.currentLiquidity)-pos.cost>=NET_PROFIT_GOAL)closeTrade(pos,price,rate,'SCALPING · $2+ NETOS');
-else if(exitValue(pos.qty,price,rate,pos.currentLiquidity)-pos.cost>=NET_PROFIT_MIN&&((fiveMin!==null&&fiveMin<1)||(buys!==null&&sells!==null&&sells>buys*1.1)||hours>=3/60))closeTrade(pos,price,rate,'SCALPING · $1+ NETO');
-else if(exitValue(pos.qty,pos.peak,rate,pos.currentLiquidity)-pos.cost>=NET_PROFIT_MIN&&price<=pos.peak*(1-TRAIL))closeTrade(pos,price,rate,'SCALPING · SEGUIMIENTO');
-else if(hours>=MAX_HOLD_HOURS)closeTrade(pos,price,rate,'TIEMPO MÁXIMO 30 MIN');
+else if(netPnl>=target)closeTrade(pos,price,rate,'OBJETIVO NETO SEGÚN RIESGO');
+else if(netPnl>=target*.72&&weakening)closeTrade(pos,price,rate,'BENEFICIO PARCIAL POR DEBILIDAD');
+else if(peakPnl>=target*.75&&price<=pos.peak*(1-TRAIL)&&netPnl>0)closeTrade(pos,price,rate,'TRAILING SOBRE GANANCIA');
+else if(hours>=MAX_HOLD_HOURS)closeTrade(pos,price,rate,'TIEMPO MÁXIMO 45 MIN');
 }
 maybeVirtualPayout();
-if(equity()<=data.dayStart*(1-DAILY)){data.haltDay=data.day;$('lastError').textContent='Caída diaria estimada ≥ 10%: nuevas entradas bloqueadas; salidas simuladas siguen vigilándose mientras la página permanezca visible.'}
-if(running&&data.haltDay!==data.day&&!priceGap&&!riskExit&&!m.stale){
+const wealth=equity()+data.paid;
+data.peakWealth=Math.max(data.peakWealth||START,wealth);
+if(wealth<=(data.peakWealth||START)*(1-SESSION_MAX_DRAWDOWN)){
+ data.haltSession=true;
+ $('lastError').textContent='Pausa de seguridad V2: caída acumulada ≥9% desde máximo virtual. Entradas bloqueadas; revisar estrategia o reiniciar manualmente.';
+}
+if(equity()<=data.dayStart*(1-DAILY)){
+ data.haltDay=data.day;
+ $('lastError').textContent='Caída diaria estimada ≥7%: nuevas entradas bloqueadas. Los stops no garantizan limitar la pérdida.';
+}
+if(running&&data.haltDay!==data.day&&!data.haltSession&&now>=(data.pauseUntil||0)&&marketBreadth>=MIN_BREADTH&&!priceGap&&!riskExit&&!m.stale){
 for(const item of qualifying){
 if(data.open.length>=MAX_POSITIONS||opened>=MAX_NEW_PER_SCAN)break;
 if(openTrade(item.mint,item.p,rate))opened++;
 }
 }
 data.lastCheck=now;lastReview=now;recentScans.push(now);
-const riskMsg=m.stale?'Fuentes de descubrimiento desactualizadas':priceGap?'No hay cotización del par de una posición':riskExit?'Se cerró posición por riesgo':data.haltDay===data.day?'Pérdida diaria máxima alcanzada':data.open.length>=MAX_POSITIONS?'Máximo de posiciones en uso':data.cash-RESERVE<MIN_STAKE?'Capital disponible insuficiente':riskExposure()>equity()*MAX_TOTAL_STOP_RISK-.75?'Presupuesto de riesgo agotado':'Sin señal de precio/flujo o en espera de enfriamiento';
+const riskMsg=data.haltSession?'Pausa de seguridad de sesión por pérdida máxima':marketBreadth<MIN_BREADTH?'Pausado: menos del 52% de tokens muestra tendencia positiva':now<(data.pauseUntil||0)?'Pausa después de una pérdida':m.stale?'Fuentes de descubrimiento desactualizadas':priceGap?'No hay cotización del par de una posición':riskExit?'Se cerró posición por riesgo':data.haltDay===data.day?'Pérdida diaria máxima alcanzada':data.open.length>=MAX_POSITIONS?'Máximo de posiciones en uso':data.cash-RESERVE<MIN_STAKE?'Capital disponible insuficiente':riskExposure()>equity()*MAX_TOTAL_STOP_RISK-.75?'Presupuesto de riesgo agotado':'Sin señal de precio/flujo o en espera de enfriamiento';
 decision(opened>0?'ENTRADA SIMULADA':riskExit?'SALIDA POR RIESGO':qualifying.length?'SEÑAL SIN ENTRADA':'SIN SEÑAL',opened>0?opened+' posiciones virtuales abiertas tras revisar '+n+' pares.':riskMsg+'; '+n+' pares consultados, '+qualifying.length+' señales nuevas.');
 summary='Última revisión: '+n+' tokens cotizados, '+qualifying.length+' señales confirmadas de mercado, '+opened+' nuevas posiciones virtuales. '+(priceGap?'Entradas bloqueadas por falta de cotización. ':riskExit?'Entradas pausadas en esta revisión tras salida por riesgo. ':'')+date(now)+'. Las señales no equivalen a verificación de seguridad.';
-if(opened===0&&qualifying.length>0&&running){let why=priceGap?'Falta la cotización de una posición existente':riskExit?'Salida por riesgo detectada en esta revisión':data.haltDay===data.day?'Límite de pérdida diaria activado':data.open.length>=MAX_POSITIONS?'Diez posiciones ocupadas':data.cash-RESERVE<MIN_STAKE?'Reserva y caja insuficiente':riskExposure()>=equity()*MAX_TOTAL_STOP_RISK-.75?'Presupuesto conjunto de riesgo agotado':'Pausa del token, tamaño mínimo o cupos de entrada';diagnostics+='<p class="amber"><b>Sin nueva compra:</b> '+esc(why)+'. Una señal favorable no obliga a entrar.</p>';}
+if(opened===0&&qualifying.length>0&&running){let why=data.haltSession?'Límite acumulado de pérdida activado':marketBreadth<MIN_BREADTH?'Mercado mayoritariamente desfavorable':now<(data.pauseUntil||0)?'Pausa de enfriamiento por pérdidas':priceGap?'Falta la cotización de una posición existente':riskExit?'Salida por riesgo detectada en esta revisión':data.haltDay===data.day?'Límite de pérdida diaria activado':data.open.length>=MAX_POSITIONS?'Diez posiciones ocupadas':data.cash-RESERVE<MIN_STAKE?'Reserva y caja insuficiente':riskExposure()>=equity()*MAX_TOTAL_STOP_RISK-.75?'Presupuesto conjunto de riesgo agotado':'Pausa del token, tamaño mínimo o cupos de entrada';diagnostics+='<p class="amber"><b>Sin nueva compra:</b> '+esc(why)+'. Una señal favorable no obliga a entrar.</p>';}
 data.scanLog.unshift({t:now,quoted:n,signals:qualifying.length,opened,block:riskMsg});
 data.scanLog=data.scanLog.filter(x=>x.t>=Date.now()-4*3600000).slice(0,2000);
 trackEquity();persist();
