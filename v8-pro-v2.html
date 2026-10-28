@@ -214,11 +214,11 @@ function inspectSignal(p){
  else if(q.liq<MIN_LIQ_USD)reason='Liquidez insuficiente';
  else if(q.vol24<MIN_VOL_24||q.vol5<600)reason='Volumen insuficiente';
  else if(q.vol24/q.liq<.2||q.vol24/q.liq>30)reason='Rotación fuera de rango';
- else if(q.m5<.4||q.m5>12)reason='Impulso de 5 minutos desfavorable o extremo';
- else if(q.h1<1||q.h1>55)reason='Tendencia de 1 hora desfavorable o extrema';
+ else if(q.m5<.75||q.m5>10)reason='Impulso de 5 minutos desfavorable o extremo';
+ else if(q.h1<1.5||q.h1>38)reason='Tendencia de 1 hora desfavorable o extrema';
  else if(q.h24< -35||q.h24>175)reason='Variación diaria fuera de rango';
  else if(q.buys+q.sells<16||q.sells<4)reason='Historial de ventas insuficiente';
- else if(buyRatio<1.2)reason='Presión compradora insuficiente';
+ else if(buyRatio<1.35)reason='Presión compradora insuficiente';
  else if(q.fdv!==null&&q.fdv>0&&q.fdv/q.liq>1000)reason='Valoración excesiva frente a liquidez';
  const score=Math.min(100,Math.round(
  Math.min(1,q.liq/120000)*24+
@@ -245,9 +245,22 @@ const buyDelta=comparable&&buys!==null&&prior.buys!==null?buys-prior.buys:null;
 const sellDelta=comparable&&sells!==null&&prior.sells!==null?sells-prior.sells:null;
 const volumeDelta=comparable&&volume!==null&&prior.volume!==null?volume-prior.volume:null;
 // Las cifras m5 son ventanas móviles; sus cambios son indicios, no operaciones confirmadas en cadena.
-const risingPrice=comparable&&delta>=.04&&delta<=6;
+const risingPrice=comparable&&delta>=.04&&delta<=3.5;
 const risingFlow=comparable&&delta>=-.04&&delta<.04&&buyDelta!==null&&sellDelta!==null&&volumeDelta!==null&&buyDelta>=2&&buyDelta>Math.max(0,sellDelta)+1&&volumeDelta>=50&&(num(p.priceChange?.m5)||0)>=2;
 const fresh=risingPrice||risingFlow;
+const tape=priceTape.get(mint)||[];
+if(tape.length&&tape[tape.length-1].pair!==pair)tape.length=0;
+// Only actual changed prices count, never repeated snapshots.
+if(price>0&&(!tape.length||Math.abs(price/tape[tape.length-1].price-1)>1e-9))tape.push({at:now,price,pair});
+while(tape.length&&(now-tape[0].at>180000||tape.length>28))tape.shift();
+priceTape.set(mint,tape);
+const recent=tape.filter(x=>now-x.at<=90000);
+const oldest=recent[0],momentum=oldest?price/oldest.price-1:0;
+const upTicks=recent.slice(1).reduce((n,x,i)=>n+(x.price>recent[i].price?1:0),0);
+const momentumOk=recent.length>=4&&now-oldest.at>=MIN_MOMENTUM_AGE&&
+ momentum>=MIN_MOMENTUM&&momentum<=MAX_MOMENTUM&&
+ upTicks>=Math.ceil((recent.length-1)*.55)&&
+ comparable&&delta!==null&&delta<=2;
 observedPrices.set(mint,{price,pair,at:now,buys,sells,volume});
 const name=String(p.baseToken?.symbol||p.baseToken?.name||'?').slice(0,22);
 let reason=result.reason;
@@ -258,8 +271,8 @@ const stable=prev&&prev.pair===pair&&now-prev.last<=180000&&price>=prev.price*.9
 const state=stable?{count:Math.min(6,prev.count+1),first:prev.first,last:now,price,pair}:{count:1,first:now,last:now,price,pair};
 confirmations.set(mint,state);
 if(!comparable){reason='Falta segunda cotización';waiting++}
-else if(!fresh){reason=(Math.abs(delta||0)<.04&&buyDelta===0&&sellDelta===0)?'DexScreener repitió el mismo precio y transacciones':'Sin impulso positivo nuevo entre consultas';noChange++}
-else if(state.count<2){reason='Confirmación inicial de impulso';waiting++}
+else if(!fresh){reason=(Math.abs(delta||0)<.04&&buyDelta===0&&sellDelta===0)?'DexScreener repitió la misma cotización':'Sin presión nueva de precio o flujo';noChange++}
+else if(state.count<2||!momentumOk){reason='Esperando 4 cotizaciones cambiadas y tendencia sostenida 25 s';waiting++}
 else {
 reason=(risingPrice?'Precio subió ':'Compras/volumen avanzaron ')+'· señal '+result.score+'/100';
 qualifying.push({mint,p,score:result.score,signal:risingPrice?'price':'flow'});
@@ -270,6 +283,7 @@ leaderboard.push({symbol:name,liq:num(p.liquidity?.usd)||0,m5:num(p.priceChange?
 }
 for(const [mint,state] of confirmations){if(now-state.last>180000)confirmations.delete(mint)}
 for(const [mint,state] of observedPrices){if(now-state.at>180000)observedPrices.delete(mint)}
+for(const [mint,arr] of priceTape){if(!arr.length||now-arr[arr.length-1].at>180000)priceTape.delete(mint)}
 qualifying.sort((a,b)=>b.score-a.score||(num(b.p.liquidity?.usd)||0)-(num(a.p.liquidity?.usd)||0));
 topCandidates=leaderboard.sort((a,b)=>b.score-a.score||b.liq-a.liq).slice(0,12);
 const counts=Object.entries(reasons).sort((a,b)=>b[1]-a[1]).slice(0,6);
