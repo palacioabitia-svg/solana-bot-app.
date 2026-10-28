@@ -81,8 +81,8 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const num=v=>v===null||v===undefined||v===''?null:(Number.isFinite(Number(v))?Number(v):null);
 const isMint=v=>/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(v);
 const localDay=()=>new Date().toLocaleDateString('sv-SE',{timeZone:'America/Mexico_City'});
-const initial=()=>({cash:START,open:[],events:[],watch:[],scanLog:[],equityPoints:[{t:Date.now(),worth:START}],consecutiveLosses:0,pauseUntil:0,peakWealth:START,tradeCount:0,paid:0,realizedNet:0,day:localDay(),dayStart:START,lastCheck:0,cooldowns:{},haltDay:''});
-function load(){try{const v=JSON.parse(localStorage.getItem(KEY));if(!v||!Number.isFinite(v.cash)||!Array.isArray(v.open)||!Array.isArray(v.events)||!Array.isArray(v.watch))return initial();v.cooldowns=v.cooldowns||{};v.haltDay=v.haltDay||'';v.scanLog=Array.isArray(v.scanLog)?v.scanLog:[];v.equityPoints=Array.isArray(v.equityPoints)?v.equityPoints:[];v.consecutiveLosses=num(v.consecutiveLosses)||0;v.pauseUntil=num(v.pauseUntil)||0;v.peakWealth=num(v.peakWealth)||START;return v}catch{return initial()}}
+const initial=()=>({cash:START,open:[],events:[],watch:[],scanLog:[],equityPoints:[{t:Date.now(),worth:START}],consecutiveLosses:0,pauseUntil:0,peakWealth:START,haltSession:false,tradeCount:0,paid:0,realizedNet:0,day:localDay(),dayStart:START,lastCheck:0,cooldowns:{},haltDay:''});
+function load(){try{const v=JSON.parse(localStorage.getItem(KEY));if(!v||!Number.isFinite(v.cash)||!Array.isArray(v.open)||!Array.isArray(v.events)||!Array.isArray(v.watch))return initial();v.cooldowns=v.cooldowns||{};v.haltDay=v.haltDay||'';v.scanLog=Array.isArray(v.scanLog)?v.scanLog:[];v.equityPoints=Array.isArray(v.equityPoints)?v.equityPoints:[];v.consecutiveLosses=num(v.consecutiveLosses)||0;v.pauseUntil=num(v.pauseUntil)||0;v.peakWealth=num(v.peakWealth)||START;v.haltSession=!!v.haltSession;return v}catch{return initial()}}
 let data=load();
 function persist(){try{localStorage.setItem(KEY,JSON.stringify(data))}catch(e){$('lastError').textContent='No se pudo guardar la simulación en este navegador: '+e.message}}
 function date(t){return new Date(t).toLocaleString('es-MX',{dateStyle:'short',timeStyle:'medium'})}
@@ -366,33 +366,74 @@ $('sources-status').textContent='DexScreener: '+Object.keys(byMint).length+' cot
 return {mints:unique,byMint,stale:Date.now()-discoveryAt>10*60000,sources:discoveryCache.sources,failures:[...discoveryCache.failures,...fail]}
 
 }
+function modeledEntry(stake,p,rate){
+ const price=num(p.priceUsd),liq=num(p.liquidity?.usd);
+ if(!price||!liq||!Number.isFinite(rate)||rate<=0||stake<MIN_STAKE)return null;
+ const impact=priceImpact(stake,liq,rate);
+ const qty=(stake-GAS)/(price*rate*(1+ROUND_COST+impact));
+ if(!Number.isFinite(qty)||qty<=0)return null;
+ const stopProceeds=exitValue(qty,price*(1-STOP),rate,liq);
+ const stopLoss=Math.max(.01,stake-stopProceeds);
+ const profitTarget=Math.max(2,stopLoss*REWARD_RISK);
+ // Required rise is a hypothetical payoff calculation, NOT a price prediction.
+ let lo=1,hi=1+MAX_REQUIRED_RISE;
+ if(exitValue(qty,price*hi,rate,liq)-stake<profitTarget)return null;
+ for(let k=0;k<24;k++){
+  const mid=(lo+hi)/2;
+  if(exitValue(qty,price*mid,rate,liq)-stake>=profitTarget)hi=mid;else lo=mid;
+ }
+ return {qty,impact,stopLoss,profitTarget,targetPrice:price*hi,requiredRise:hi-1};
+}
+function eligibleForEntry(now){
+ const wealth=equity()+data.paid;
+ data.peakWealth=Math.max(data.peakWealth||START,wealth);
+ if(data.haltSession)return false;
+ if(wealth<(data.peakWealth||START)*(1-SESSION_MAX_DRAWDOWN)){
+  data.haltSession=true;return false;
+ }
+ if(now<(data.pauseUntil||0))return false;
+ const buys=data.events.filter(e=>e.type==='COMPRA SIMULADA');
+ if(buys.filter(e=>now-e.t<3600000).length>=MAX_BUYS_PER_HOUR)return false;
+ if(buys.filter(e=>new Date(e.t).toLocaleDateString('sv-SE',{timeZone:'America/Mexico_City'})===localDay()).length>=MAX_BUYS_PER_DAY)return false;
+ return true;
+}
 function openTrade(mint,p,rate){
-if(data.open.some(t=>t.mint===mint)||data.open.length>=MAX_POSITIONS||(data.cooldowns[mint]&&Date.now()-data.cooldowns[mint]<COOLDOWN_MS))return false;
+const now=Date.now();
+if(!eligibleForEntry(now))return false;
+if(data.open.some(t=>t.mint===mint)||data.open.length>=MAX_POSITIONS||(data.cooldowns[mint]&&now-data.cooldowns[mint]<COOLDOWN_MS))return false;
 const usable=data.cash-RESERVE,eq=equity();
 const dex=String(p.dexId||'').toLowerCase(),sameDex=data.open.filter(x=>x.dexId===dex).length;
 if(sameDex>=MAX_ONE_DEX)return false;
 const committed=data.open.reduce((n,x)=>n+x.cost,0),availableExposure=Math.max(0,eq*MAX_CAPITAL_EXPOSURE-committed);
 const remainingRisk=eq*MAX_TOTAL_STOP_RISK-riskExposure();
-const stopFactor=(1-STOP)*(1-ROUND_COST-MAX_IMPACT)/(1+ROUND_COST+MAX_IMPACT);
-const maxStakeRisk=(remainingRisk-GAS*(1+stopFactor))/(1-stopFactor);
-const stake=Math.min(usable,eq*MAX_STAKE,maxStakeRisk,availableExposure);
+const stakeCap=Math.min(usable,eq*MAX_STAKE,availableExposure);
 const price=num(p.priceUsd);
-if(!price||!Number.isFinite(stake)||stake<MIN_STAKE||!p.pairAddress||!Number.isFinite(rate)||rate<=0)return false;
-const impact=priceImpact(stake,num(p.liquidity?.usd),rate);
-const qty=(stake-GAS)/(price*rate*(1+ROUND_COST+impact));
-if(!Number.isFinite(qty)||qty<=0||data.cash-stake<RESERVE-.000001)return false;
+if(!price||!Number.isFinite(stakeCap)||stakeCap<MIN_STAKE||!p.pairAddress||!Number.isFinite(rate)||rate<=0)return false;
+const model=modeledEntry(stakeCap,p,rate);
+if(!model)return false;
+const riskStake=remainingRisk/Math.max(model.stopLoss/stakeCap,.0001);
+const stake=Math.min(stakeCap,Math.max(0,riskStake));
+const buy=modeledEntry(stake,p,rate);
+if(!buy||buy.stopLoss>remainingRisk+.01||data.cash-stake<RESERVE-.000001)return false;
 data.cash-=stake;
-data.open.push({mint,pair:p.pairAddress,symbol:String(p.baseToken?.symbol||'?').slice(0,30),opened:Date.now(),cost:stake,qty,dexId:dex,entryPrice:price,entryFx:rate,entryLiquidity:num(p.liquidity?.usd),currentLiquidity:num(p.liquidity?.usd),entryImpact:impact,score:inspectSignal(p).score,peak:price});
+data.open.push({mint,pair:p.pairAddress,symbol:String(p.baseToken?.symbol||'?').slice(0,30),opened:now,cost:stake,qty:buy.qty,dexId:dex,entryPrice:price,entryFx:rate,entryLiquidity:num(p.liquidity?.usd),currentLiquidity:num(p.liquidity?.usd),entryImpact:buy.impact,score:inspectSignal(p).score,peak:price,targetNet:buy.profitTarget,stopLoss:buy.stopLoss,targetPrice:buy.targetPrice});
 confirmations.delete(mint);
-record({t:Date.now(),type:'COMPRA SIMULADA',symbol:p.baseToken?.symbol,amount:stake,score:inspectSignal(p).score,impactPct:impact*100,priceUsd:price});
-return true
+record({t:now,type:'COMPRA SIMULADA',symbol:p.baseToken?.symbol,amount:stake,score:inspectSignal(p).score,impactPct:buy.impact*100,priceUsd:price,targetNet:buy.profitTarget,stopLoss:buy.stopLoss});
+return true;
 }
 function closeTrade(p,price,rate,reason){
 const proceeds=exitValue(p.qty,price,rate,p.currentLiquidity);
 const pnl=proceeds-p.cost;
+if(pnl<0){
+ data.consecutiveLosses=(data.consecutiveLosses||0)+1;
+ data.pauseUntil=Math.max(data.pauseUntil||0,Date.now()+LOSS_PAUSE_MS*Math.min(4,data.consecutiveLosses));
+}else{
+ data.consecutiveLosses=0;
+ data.pauseUntil=Math.max(data.pauseUntil||0,Date.now()+60000);
+}
 data.cash+=proceeds;data.realizedNet+=pnl;data.cooldowns[p.mint]=Date.now();
 data.open=data.open.filter(o=>o!==p);confirmations.delete(p.mint);
-record({t:Date.now(),type:'VENTA SIMULADA · '+reason,symbol:p.symbol,amount:proceeds,pnl,score:p.score,priceUsd:price,impactPct:priceImpact(p.qty*price*rate,p.currentLiquidity,rate)*100});
+record({t:Date.now(),type:'VENTA SIMULADA · '+reason,symbol:p.symbol,amount:proceeds,pnl,score:p.score,priceUsd:price,impactPct:priceImpact(p.qty*price*rate,p.currentLiquidity,rate)*100,targetNet:p.targetNet,stopLoss:p.stopLoss});
 }
 
 function maybeVirtualPayout(){
