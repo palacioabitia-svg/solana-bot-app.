@@ -87,7 +87,7 @@ const TRAIL=.04;
 const POLL_MS=10000,COOLDOWN_MS=30000,MAX_HOLD_HOURS=.5,MIN_STAKE=5,MAX_NEW_PER_SCAN=6;
 const MAX_UNIVERSE=420,SCAN_SIZE=180,DISCOVERY_REFRESH_MS=90000;
 const ROUND_COST=.022,GAS=.05,MAX_AGE_MS=7*86400000;
-let running=false,busy=false,fx=null,lastPrices={},lastReview=0,summary='Sin evaluación de mercado.',diagnostics='Todavía no se ha realizado una consulta.',recentScans=[],confirmations=new Map(),observedPrices=new Map(),discoveryCache=null,discoveryAt=0,topCandidates=[],decisionHistory=[],lastDecision='Aún no hay decisiones';
+let running=false,busy=false,fx=null,lastPrices={},lastReview=0,summary='Sin evaluación de mercado.',diagnostics='Todavía no se ha realizado una consulta.',recentScans=[],confirmations=new Map(),observedPrices=new Map(),discoveryCache=null,discoveryAt=0,scanCursor=0,seenMintWindow=new Map(),topCandidates=[],decisionHistory=[],lastDecision='Aún no hay decisiones';
 const money=n=>Number(n).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2});
 const signedMoney=n=>(n<0?'-$':'+$')+money(Math.abs(n));
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -293,7 +293,7 @@ return qualifying
 
 async function market(){
 const now=Date.now();
-if(!discoveryCache||now-discoveryAt>90000){
+if(!discoveryCache||now-discoveryAt>DISCOVERY_REFRESH_MS){
 const feedSpecs=[
 {label:'Perfiles recientes',url:'https://api.dexscreener.com/token-profiles/latest/v1',kind:'tokens'},
 {label:'Boosts destacados (publicidad pagada)',url:'https://api.dexscreener.com/token-boosts/top/v1',kind:'tokens'},
@@ -329,28 +329,39 @@ if(!groups.some(g=>g.length)&&!data.watch.length&&!data.open.length)throw Error(
 discoveryCache={groups,sources,failures};
 discoveryAt=now;
 }
-const unique=[...new Set([...data.open.map(p=>p.mint),...data.watch])];
-// Reparto equilibrado: ninguna lista pagada o de lanzamientos monopoliza el límite de 145 tokens.
-for(let j=0;j<30&&unique.length<145;j++)for(const group of discoveryCache.groups){const mint=group[j];if(mint&&!unique.includes(mint)&&unique.length<145)unique.push(mint)}
-if(!unique.length)throw Error('El universo de Solana está vacío');
-const chunks=[];for(let i=0;i<unique.length;i+=30)chunks.push(unique.slice(i,i+30));
-const attempts=await Promise.allSettled(chunks.map(chunk=>json('https://api.dexscreener.com/tokens/v1/solana/'+chunk.join(','))));
+const priority=[...new Set([...data.open.map(p=>p.mint),...data.watch])].filter(isMint);
+const universe=[],dedup=new Set(priority);
+// Alterna grupos de búsqueda, sin favorecer automáticamente un listado pagado.
+for(let j=0;j<30&&universe.length<MAX_UNIVERSE;j++){
+ for(const group of discoveryCache.groups){
+  const mint=group[j];
+  if(mint&&!dedup.has(mint)&&universe.length<MAX_UNIVERSE){universe.push(mint);dedup.add(mint)}
+ }
+}
+const requested=priority.slice(0,SCAN_SIZE),free=Math.max(0,SCAN_SIZE-requested.length);
+const portion=Math.min(free,universe.length);
+for(let k=0;k<portion;k++){requested.push(universe[(scanCursor+k)%universe.length])}
+if(universe.length)scanCursor=(scanCursor+portion)%universe.length;
+if(!requested.length)throw Error('El radar no recibió direcciones públicas de Solana.');
+const batches=[];for(let i=0;i<requested.length;i+=30)batches.push(requested.slice(i,i+30));
+const attempts=await Promise.allSettled(batches.map(chunk=>json('https://api.dexscreener.com/tokens/v1/solana/'+chunk.join(','))));
 const all=[],lookupFailures=[];
 for(let i=0;i<attempts.length;i++){
-const attempt=attempts[i];
-if(attempt.status==='fulfilled'&&Array.isArray(attempt.value))all.push(...attempt.value);
-else lookupFailures.push('Consulta '+(i+1)+': '+(attempt.status==='rejected'?attempt.reason.message:'Respuesta inválida'));
+ const x=attempts[i];
+ if(x.status==='fulfilled'&&Array.isArray(x.value))all.push(...x.value);
+ else lookupFailures.push('Lote '+(i+1)+': '+(x.status==='rejected'?x.reason?.message||String(x.reason):'Respuesta inválida'));
 }
-if(!all.length)throw Error('No se pudieron obtener cotizaciones DexScreener: '+lookupFailures.join(' | '));
+if(!all.length)throw Error('DexScreener no entregó ninguna cotización: '+lookupFailures.join(' | '));
 const byMint={};
-for(const token of unique){
-const held=data.open.find(p=>p.mint===token);
-const exact=held?all.find(p=>p.chainId==='solana'&&p.baseToken?.address===token&&p.pairAddress===held.pair&&num(p.priceUsd)>0):null;
-const p=exact||pairsFor(token,all);
-if(p)byMint[token]=p;
+for(const mint of requested){
+ const held=data.open.find(o=>o.mint===mint);
+ const exact=held?all.find(p=>p.chainId==='solana'&&p.baseToken?.address===mint&&p.pairAddress===held.pair&&num(p.priceUsd)>0):null;
+ const candidate=held?exact:pairsFor(mint,all);
+ if(candidate)byMint[mint]=candidate;
 }
-$('sources-status').textContent='DexScreener: '+Object.keys(byMint).length+' pares con precios; '+discoveryCache.sources.length+' búsquedas en caché de 90 s.';
-return {mints:unique,byMint,sources:discoveryCache.sources,failures:[...discoveryCache.failures,...lookupFailures]}
+$('sources-status').textContent='DexScreener: '+Object.keys(byMint).length+' pares con precios / '+requested.length+' tokens solicitados · '+universe.length+' en universo rotativo · '+discoveryCache.sources.length+' fuentes (renovación de 90 s).';
+return {mints:requested,byMint,poolSize:universe.length,batchCount:batches.length,requested:requested.length,sources:discoveryCache.sources,failures:[...discoveryCache.failures,...lookupFailures]}
+
 }
 function openTrade(mint,p,rate){
 if(data.open.some(t=>t.mint===mint)||data.open.length>=MAX_POSITIONS||(data.cooldowns[mint]&&Date.now()-data.cooldowns[mint]<COOLDOWN_MS))return false;
